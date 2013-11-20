@@ -126,7 +126,7 @@ Task::Task(std::string cfg_path_file, int n, int m, int _base, int _ee, int _pri
     base(_base), ee(_ee)
 {
     ConfigReader theConfigReader( cfg_path_file.c_str(),
-                                  "../config/joints_params.cfg" );
+                                  "./../config/joints_params.cfg" );
 
     theKinChain = new Rmath::KinChain( theConfigReader, _base, _ee);
 //    (*baseKinChain) += (*theKinChain);
