@@ -15,6 +15,7 @@ MODULE(DiveHandler)
 	REQUIRES(GameInfo)
 	REQUIRES(RobotPoseSpqrFiltered)
 	REQUIRES(BallModel)
+        REQUIRES(GlobalBallEstimation)
 	PROVIDES(DiveHandle)
 END_MODULE
 
