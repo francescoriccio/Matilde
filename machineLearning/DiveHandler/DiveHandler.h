@@ -8,11 +8,13 @@
 #include <SPQR-Libraries/PTracking/src/Utils/AgentPacket.h>
 #include <Representations/SPQR-Representations/ConfigurationParameters.h>
 #include <Representations/Infrastructure/GameInfo.h>
+#include <Representations/Infrastructure/RobotInfo.h>
 
 #include<vector>
 
 MODULE(DiveHandler)
 	REQUIRES(GameInfo)
+        REQUIRES(RobotInfo)
 	REQUIRES(RobotPoseSpqrFiltered)
 	REQUIRES(BallModel)
         REQUIRES(GlobalBallEstimation)
@@ -94,14 +96,15 @@ private:
 	float tBackInPose;
 	
 	float ballProjectionIntercept;
-	
+
+        CoeffsLearner* learner;
 	
 	void estimateDiveTimes();
 	void estimateBallProjection();
-// 	void tccc_Andrea_FushFushFush(){}
 	
 public:
 	DiveHandler();
+        ~DiveHandler();
 	void update(DiveHandle& diveHandle);
 	
 };

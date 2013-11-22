@@ -52,7 +52,14 @@ bool DiveHandler::PGLearner::updateCoeffs()
     return false;
 }
 
-DiveHandler::DiveHandler(): diveType(none), tBall2Goal(SPQR::FIELD_DIMENSION_Y), tDive(0.0), tBackInPose(0.0){}
+DiveHandler::DiveHandler():
+    diveType(none), tBall2Goal(SPQR::FIELD_DIMENSION_Y), tDive(0.0), tBackInPose(0.0), learner(new PGLearner(2, EPSILON, T, 1.0)){}
+
+DiveHandler::~DiveHandler()
+{
+    delete learner;
+}
+
 
 void DiveHandler::estimateBallProjection()
 {
@@ -96,12 +103,15 @@ void DiveHandler::estimateBallProjection()
 
 void DiveHandler::estimateDiveTimes()
 {
-    float delta_x = -SPQR::FIELD_DIMENSION_X - theGlobalBallEstimation.multiRobotX;
-    float delta_y = ballProjectionIntercept - theGlobalBallEstimation.multiRobotY;
+    float delta_x = -SPQR::FIELD_DIMENSION_X - theGlobalBallEstimation.singleRobotX;
+    float delta_y = ballProjectionIntercept - theGlobalBallEstimation.singleRobotY;
 
     float distanceBall2Goal = sqrt( delta_x*delta_x + delta_y*delta_y);
 
-    tBall2Goal = distanceBall2Goal / theBallModel.estimate.velocity.abs();
+    if ( (theBallModel.estimate.velocity.abs() != 0.0)  && (theBallModel.estimate.velocity.x < 0.0) )
+        tBall2Goal = 1000.0 * ( distanceBall2Goal / theBallModel.estimate.velocity.abs() );
+    else
+        tBall2Goal = -1.0;
 
     float tRecover = 0.0;
     float tReposition = 0.0;
@@ -117,48 +127,62 @@ void DiveHandler::estimateDiveTimes()
 
 void DiveHandler::update(DiveHandle& diveHandle)
 {
-    estimateBallProjection();
-
-    diveHandle.ballProjectionEstimate = ballProjectionIntercept;
-
-//    SPQR_INFO("ball: " << theGlobalBallEstimation.multiRobotX << ", " << theGlobalBallEstimation.multiRobotY);
-
-    if( theGlobalBallEstimation.multiRobotX < 0.0 && fabs(ballProjectionIntercept) < SPQR::FIELD_DIMENSION_Y )
+    if (theRobotInfo.number == 1)
     {
-        estimateDiveTimes();
-	
+        estimateBallProjection();
+        diveHandle.ballProjectionEstimate = ballProjectionIntercept;
+
+        if( theGlobalBallEstimation.singleRobotX < 0.0 && fabs(ballProjectionIntercept) < SPQR::FIELD_DIMENSION_Y )
+        {
+            estimateDiveTimes();
+
 #ifdef DEBUG_MODE
-        SPQR_INFO("ball projection: " << ballProjectionIntercept);
-        SPQR_INFO("PAPO time: " << tBall2Goal);
-        SPQR_INFO("dive time: " << tDive);
-        SPQR_INFO("back in pose time: " << tBackInPose);
+            SPQR_INFO("Ball projection: " << ballProjectionIntercept);
+            SPQR_INFO("PAPO time: " << tBall2Goal);
+            SPQR_INFO("Dive time: " << tDive);
+            SPQR_INFO("Back-in-pose time: " << tBackInPose);
 #endif
 
-        if( state == learning )
-        {
-            // iterazione while PG
+            if( state == learning )
+            {
+                // iterazione while PG
 
-            // state = waitReward;
+                // state = waitReward;
+            }
+            else if( state == waitReward )
+            {
+                // polling for reward
+
+                // if reward -> state = learning
+            }
+
+            if( state == learning )
+            {
+                // adjust PG parameters wrt reward
+            }
+
+            // compute dive Time using current coefficients
+            float diveTime = (learner->getCoeffs()).at(1) * ( (learner->getCoeffs()).at(0) * tBall2Goal - tDive );
+            if (diveTime >= 0)
+                diveHandle.diveTime = diveTime;
+            else
+                diveHandle.diveTime = -1.0;
+
+#ifdef DEBUG_MODE
+            if (diveHandle.diveTime > 0)
+            {SPQR_INFO("Dive in " << diveHandle.diveTime << " ms! ");}
+            else if (diveHandle.diveTime == 0)
+            {SPQR_INFO("Dive now! ");}
+            else
+            {SPQR_INFO("Stay still... ");}
+#endif
+
         }
-        else if( state == waitReward )
+        else
         {
-            // polling for reward
-
-            // if reward -> state = learning
+            diveHandle.diveTime = -1;
+            diveHandle.diveType = diveType;
         }
-
-        if( state == learning )
-        {
-            // adjust PG parameters wrt reward
-        }
-
-        //std::vector<float> params;
-        // compute dive Time using alphas
-    }
-    else
-    {
-        diveHandle.dive = false;
-        diveHandle.diveType = diveType;
     }
 
 }

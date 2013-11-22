@@ -12,7 +12,7 @@ private:
 	void serialize(In* in, Out* out)
 	{
 		STREAM_REGISTER_BEGIN;
-		STREAM(dive);
+                STREAM(diveTime);
 		STREAM(ballProjectionEstimate);
 		STREAM(diveType);
 		STREAM_REGISTER_FINISH;
@@ -30,10 +30,10 @@ public:
 	
 	typedef int Dive;
 	
-	bool dive;
+        float diveTime;
 	float ballProjectionEstimate;
 	Dive diveType;
 	
 	/** Constructor */
-	DiveHandle() : dive(false), ballProjectionEstimate(0.0), diveType(none) {;}
+        DiveHandle() : diveTime(-1.0), ballProjectionEstimate(0.0), diveType(none) {;}
 };
