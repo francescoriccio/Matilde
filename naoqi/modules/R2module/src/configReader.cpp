@@ -35,8 +35,9 @@ void ConfigReader::extractJointParams(std::vector<double>* _min, std::vector<dou
 
 soth::VectorBound ConfigReader::extractJointBounds()
 {
-    soth::VectorBound bounds(minBounds.size());
-    for(int i=0; i<minBounds.size(); ++i)
+    soth::VectorBound bounds(5);//minBounds.size());
+//    for(int i=0; i<minBounds.size(); ++i)
+    for(int i=7; i<=12; ++i)
     {
         bounds[i] = soth::Bound(minBounds.at(i), maxBounds.at(i));
     }

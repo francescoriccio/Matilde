@@ -20,6 +20,8 @@
 #include "libmath/Rutils.h"
 #include "libmath/transform.h"
 
+#define INFO(x) std::cout << "[Rmath] " << x << std::endl;
+
 /** -------- Core tools -------- */
 
 
@@ -466,6 +468,7 @@ void Rmath::DLSInverse(const Eigen::MatrixXd& m, Eigen::MatrixXd* m_dls, double 
  */
 void Rmath::DirectKin(const Eigen::MatrixXd& dh, Eigen::Matrix4d* H)
 {
+    assert(H != NULL);
     // An n-by-4 Denavit-Hartenberg table is required
     assert(dh.cols() == 4);
 
@@ -498,6 +501,7 @@ void Rmath::DirectKin(const Eigen::MatrixXd& dh, Eigen::Matrix4d* H)
 
 void Rmath::DirectKin(const std::vector<Rmath::Transform*>& chain, Eigen::Matrix4d* H)
 {
+    assert(H != NULL);
     // Initialization
     (*H) = Eigen::Matrix4d::Identity();
 
@@ -568,7 +572,8 @@ void Rmath::geomJacobian(const Eigen::MatrixXd& dh, Eigen::MatrixXd* J, int task
 
 }
 
-void Rmath::geomJacobian(const std::vector<Rmath::Transform*>& chain, const std::vector<int>& i_joints, Eigen::MatrixXd* J, int taskSpaceDim)
+void Rmath::geomJacobian(const std::vector<Rmath::Transform*>& chain, const std::vector<int>& i_joints,
+                         Eigen::MatrixXd* J, int taskSpaceDim)
 {
     assert(J != NULL);
     // Task space is 6-dimensional at most (i.e. pose in 3D space)
@@ -592,14 +597,17 @@ void Rmath::geomJacobian(const std::vector<Rmath::Transform*>& chain, const std:
     J->col(0) = J0.head(taskSpaceDim);
 
     // Go through the chain of transforms and build up J column-wise
-    for (int i=0; i < i_joints.size(); ++i)
+    for (int i=1; i < i_joints.size(); ++i)
     {
-        // Compute forward kinematics up to joint i
+        // Consider the subchain of transformation leading to joint i-1
         Eigen::Matrix4d currentH;
-        std::vector<Rmath::Transform*> currentSubchain(chain.begin(), chain.begin()+i_joints.at(i));
+        std::vector<Rmath::Transform*> currentSubchain; //(chain.begin(), chain.begin()+i_joints.at(i-1));
+        for (int j=0; j <= i_joints.at(i)-1; ++j)
+            currentSubchain.push_back( chain.at(j) );
+        // Compute forward kinematics up to joint i-1
         DirectKin(currentSubchain, &currentH);
 
-        // Extract current Z-axis in the reference frame of joint i
+        // Extract current Z-axis in the reference frame of joint i-1
         Eigen::Vector3d currentZ = currentH.topLeftCorner(3,3) * z;
         // Extract base-to-joint-i translation vector
         Eigen::Vector3d d_0i = currentH.topRightCorner(3,1);
