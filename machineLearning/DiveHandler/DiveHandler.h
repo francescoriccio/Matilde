@@ -1,16 +1,41 @@
+/**
+* @file DiveHandler.h
+*
+*	This header file contains the declaration of a module working as a dive handler for the goalie.
+*   Such handler is activated when the ball gets in the own field side, and it computes an estimate of its projection toward the goal
+*   with respect to the goalie reference frame. It also provides estimates for the amount of time needed to dive, save the ball and
+*   then get back to the goalie position. This measure is compared against the estimated time the ball needs to reach the goal.
+*   With the use of reinforcement learning techniques (Policy Gradient, Genetic Algorithms) this module seeks the optimal diving strategy
+*   by minimizing a cost function defined with the above mentioned parameters.
+*   Output of this module is the representation DiveHandle, comprising a timer to trigger the dive action and the type of dive to be
+*   performed (long dive, close dive, no dive at all).
+*
+* @author Claudio Delli Bovi, Francesco Riccio
+*
+*/
+
 #pragma once
+
+// Includes
+
+#include <string>
+#include <vector>
+#include <list>
+#include <map>
 
 #include "Tools/Module/Module.h"
 #include "Representations/Modeling/BallModel.h"
-#include "Representations/SPQR-Representations/RobotPoseSpqrFiltered.h"
-#include "Representations/SPQR-Representations/DiveHandle.h"
-#include "Representations/SPQR-Representations/GlobalBallEstimation.h"
-#include <SPQR-Libraries/PTracking/src/Utils/AgentPacket.h>
-#include <Representations/SPQR-Representations/ConfigurationParameters.h>
 #include <Representations/Infrastructure/GameInfo.h>
 #include <Representations/Infrastructure/RobotInfo.h>
+#include <Representations/SPQR-Representations/ConfigurationParameters.h>
+#include "Representations/SPQR-Representations/RobotPoseSpqrFiltered.h"
+#include "Representations/SPQR-Representations/GlobalBallEstimation.h"
+#include "Representations/SPQR-Representations/DiveHandle.h"
+#include "SPQR-Libraries/PTracking/src/Utils/AgentPacket.h"
 
-#include<vector>
+
+// Module definition
+
 
 MODULE(DiveHandler)
 	REQUIRES(GameInfo)
@@ -21,90 +46,141 @@ MODULE(DiveHandler)
 	PROVIDES(DiveHandle)
 END_MODULE
 
+
+// Termination conditions
+#define MAX_ITER 30
+#define CONVERGENCE_THRESHOLD 0.05
+
+// PG parameters
+#define BUFFER_DIM 10
+#define ETA 1
 #define EPSILON 0.5
 #define T 5
 
-#define MAX_ITER 30
-#define BUFFER_DIM 10
-#define CONVERGENCE_THRESHOLD 0.05
-#define ETA 1
+
+// Module class declaration
+
 
 class DiveHandler : public DiveHandlerBase
 {
-	enum LearningState
-	{ 
-		notLearning = 1, 
-		waitReward, 
-		learning
-	};
-	
-	enum Dive
-	{ 
-		none = 1, 
-		lDive, 
-		rDive, 
-		lcloseDive, 
-		rcloseDive
-	};
-	
-	class CoeffsLearner
-	{
-	protected:
-		std::vector<float> coeffs;
-		std::map<std::string, float> params;
+    // Learning state
+    enum LearningState
+    {
+        // Learning disabled
+        notLearning = 1,
+        // Learning paused, expecting reward
+        waitReward,
+        // Learning active
+        learning
+    };
+
+    // Dive type
+    enum Dive
+    {
+        // No dive at all
+        none = 1,
+        // Long dive on the left
+        lDive,
+        // Long dive on the right
+        rDive,
+        // Close dive on the left
+        lcloseDive,
+        // Close dive on the right
+        rcloseDive
+    };
+
+    // Inner base class modeling the learning agent
+    class CoeffsLearner
+    {
+        protected:
+        // Set of coefficients representing the learning objective
+        std::vector<float> coeffs;
+        // Set of fixed parameters defining the cost funcion
+        std::map<std::string, float> params;
 		
-	public:
-		CoeffsLearner(int _nCoeffs, float _initValue): coeffs(_nCoeffs, _initValue){}
+        public:
+        // Default constructor
+        CoeffsLearner(int _nCoeffs, float _initValue): coeffs(_nCoeffs, _initValue) { }
+
+        // Setter/getter for the coefficients
+        void setCoeffs(const std::vector<float>& _coeffs);
+        inline std::vector<float> getCoeffs(){ return coeffs; }
+
+        // Setter/getter for the parameters
+        void setParam(const std::string& _key, float _value);
+        inline float getParam(std::string _key){ return params[_key]; }
+
+        // Update coefficients performing a step of the learning algorithm
+        virtual bool updateCoeffs() = 0;
+
+    };
+
+    // Inner class modeling a PolicyGradient-based learning agent
+    class PGLearner : public CoeffsLearner
+    {
+        typedef std::list< std::vector<float> > PGbuffer;
 		
-		void setCoeffs(std::vector<float> _coeffs);
-		inline std::vector<float> getCoeffs(){ return coeffs; }
-		
-		void setParam(std::string _key, float _value);
-		inline float getParam(std::string _key){ return params[_key]; }
-		
-		virtual bool updateCoeffs() = 0;
-	};
-	
-	class PGLearner : public CoeffsLearner
-	{
-		typedef std::list< std::vector<float> > PGbuffer;
-		
-	private:
-		PGbuffer coeffsBuffer;
-		std::vector<float> perturbations; 
-		
-		bool converged(){ return false; }
-	public:
-		
-		PGLearner(int _nCoeffs, float _epsilon = EPSILON, int _T = T, float _initValue = 0.0, bool randomize = false);
-		
-		void generatePerturbations();
-		float evaluatePerturbation( std::vector<float> R );
-		
-		virtual bool updateCoeffs();
-	};
+        private:
+
+        // Memory buffer for the PG algorithm
+        PGbuffer coeffsBuffer;
+        // Set of perturbations to be performed
+        std::vector<float> perturbations;
+
+        // Check for convergence of the algorithm
+        bool converged();
+
+        public:
+
+        // Default constructor
+        PGLearner(int _nCoeffs, float _epsilon = EPSILON, int _T = T, float _initValue = 0.0, bool randomize = false);
+
+        // Generate a set of perturbations for the current policy
+        void generatePerturbations();
+
+        // Evaluate a set of perturbations with the cost function
+        float evaluatePerturbation( std::vector<float> R );
+
+        // Update coefficients performing a step of the learning algorithm
+        virtual bool updateCoeffs();
+
+    };
 	
 // 	class GALearner : public CoeffsLearner
 // 	{};
 	
 private:
-	Dive diveType;
-	LearningState state;
-	
-	float tBall2Goal; // so called Tpapo for historical reasons
-	float tDive;
-	float tBackInPose;
-	
-	float ballProjectionIntercept;
 
-        CoeffsLearner* learner;
-	
-	void estimateDiveTimes();
-	void estimateBallProjection();
+    // Dive type currently selected
+    Dive diveType;
+    // Current learning state
+    LearningState state;
+
+    // Learning agent
+    CoeffsLearner* learner;
+
+    // Estimated time the ball needs to reach the goal
+    float tBall2Goal; // a.k.a. Tpapo (historical reasons)
+    // Estimated time needed for the current dive action to be performed
+    float tDive;
+    // Estimated time the goalie needs to back up to its original position
+    float tBackInPose;
+
+    // Estimated intersection between the ball projection and the goal line
+    float ballProjectionIntercept;
+
+    // Computes parameters using the ball estimated position and velocity
+    void estimateDiveTimes();
+    void estimateBallProjection();
 	
 public:
-	DiveHandler();
-        ~DiveHandler();
-	void update(DiveHandle& diveHandle);
+
+    // Default constructor
+    DiveHandler();
+    // Destructor
+    ~DiveHandler();
+
+    // Update the DiveHandle for the goalie behavior
+    void update(DiveHandle& diveHandle);
 	
 };
