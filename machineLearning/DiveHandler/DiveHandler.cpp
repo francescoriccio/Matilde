@@ -121,17 +121,24 @@ bool DiveHandler::PGLearner::converged()
         return false;
 }
 
-
-/* TODO */
+/* TOTEST&COMMENT */
 void DiveHandler::PGLearner::generatePerturbations()
 {
-    // store perturbations
+  srand(time(NULL));
+  std::vector<float> perturbation(coeffs);
+  
+  for(int i=0; i<params["T"]; ++i)
+  {
+	std::vector<float> perturbation(coeffs);
+	
+	for(unsigned int j=0; j<coeffs.size(); ++j)
+	  perturbation.at(j) += (rand()%3 -1)*params["epsilon"];
+	
+	perturbationsBuffer.push_back(perturbation);
+  }
 }
 
-/*
- * TOCOMMENT
- */
-
+/* TOCOMMENT */
 float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
 {
     // Dimensions check
@@ -140,8 +147,20 @@ float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
     return diveHandler_ptr->computeDiveAndRecoverTime(coeffs.at(0) + R.at(0), coeffs.at(1) + R.at(1));
 }
 
-/* TODO */
+/*TOTEST&COMMENT*/
+void DiveHandler::PGLearner::updateParams(std::vector<float> rewards)
+{
+  float positive_count = 0;
+  float negative_count = 0;
+  
+  for(unsigned int i=0; i<rewards.size(); ++i)
+  {
+	if( rewards.at(i) > 0) positive_count += rewards.at(i); 
+	if( rewards.at(i) < 0) negative_count += rewards.at(i); 
+  }
+}
 
+/* TODO */
 bool DiveHandler::PGLearner::updateCoeffs()
 {
     // while stop criterion: MAX_ITER || converged()
@@ -151,7 +170,6 @@ bool DiveHandler::PGLearner::updateCoeffs()
     // update the coeffs with -(A/abs(A))*ETA where A is the 2D vector of Ans
     return false;
 }
-
 
 
 /** --------------------------- Dive Handler ---------------------------- */

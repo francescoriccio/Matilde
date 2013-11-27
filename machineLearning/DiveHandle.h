@@ -31,8 +31,8 @@ public:
 	typedef int Dive;
 	
         float diveTime;
-	float ballProjectionEstimate;
-	Dive diveType;
+		float ballProjectionEstimate;
+		Dive diveType;
 	
 	/** Constructor */
         DiveHandle() : diveTime(-1.0), ballProjectionEstimate(0.0), diveType(none) {;}

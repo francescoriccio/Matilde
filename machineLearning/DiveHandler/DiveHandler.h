@@ -39,10 +39,10 @@
 
 MODULE(DiveHandler)
 	REQUIRES(GameInfo)
-        REQUIRES(RobotInfo)
+	REQUIRES(RobotInfo)
 	REQUIRES(RobotPoseSpqrFiltered)
 	REQUIRES(BallModel)
-        REQUIRES(GlobalBallEstimation)
+	REQUIRES(GlobalBallEstimation)
 	PROVIDES(DiveHandle)
 END_MODULE
 
@@ -52,6 +52,7 @@ END_MODULE
 #define CONVERGENCE_THRESHOLD 0.05
 
 // PG parameters
+#define GAMMA 0.5
 #define BUFFER_DIM 10
 #define ETA 1
 #define EPSILON 0.5
@@ -145,6 +146,8 @@ class DiveHandler : public DiveHandlerBase
 
         // Evaluate a single policy perturbation with the cost function
         float evaluatePerturbation( std::vector<float> R );
+		
+		void updateParams(std::vector<float> rewards);
 
         // Update coefficients performing a step of the learning algorithm
         virtual bool updateCoeffs();
