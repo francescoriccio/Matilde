@@ -122,7 +122,7 @@ class DiveHandler : public DiveHandlerBase
     // Inner class modeling a PolicyGradient-based learning agent
     class PGLearner : public CoeffsLearner
     {
-        typedef std::list< std::vector<float> > PGbuffer;
+        typedef std::vector< std::vector<float> > PGbuffer;
 
         private:
 

@@ -15,17 +15,29 @@
 */
 
 #include <stdlib.h>
+#include <cmath>
 #include <time.h>
 
 #include "DiveHandler.h"
 
 // Uncomment to have debug information
 #define DEBUG_MODE
+
 // Debug messages template
 #define SPQR_ERR(x) std::cerr << "\033[22;31;1m" <<"[DiveHandler] " << x << "\033[0m"<< std::endl;
 #define SPQR_INFO(x) std::cerr << "\033[22;34;1m" <<"[DiveHandler] " << x << "\033[0m" << std::endl;
 
 MAKE_MODULE(DiveHandler, SPQR-Modules)
+
+// Shortcut to compute the magnitude of a vector
+float magnitude(std::vector<float> v)
+{
+    float m = 0.0;
+    for (unsigned int i = 0; i < v.size(); ++i)
+        m += v.at(i) * v.at(i);
+
+    return sqrt(m);
+}
 
 
 /** --------------------- CoeffsLearner: base class --------------------- */
@@ -78,15 +90,37 @@ DiveHandler::PGLearner::PGLearner( DiveHandler* _dhPtr, int _nCoeffs, float _eps
     setParam("T", _T);
 }
 
-/* TODO */
+/* TOTEST&COMMENT */
 bool DiveHandler::PGLearner::converged()
 {
-    // alpha1 alpha2 converge
+    // Average every coefficients variation across the buffer
 
-    // if yes, store values in a file
+    // Compute mean
+    float avg_variation = magnitude(coeffs) - magnitude(coeffsBuffer.front());
+    for (unsigned int i = 0; i < coeffsBuffer.size()-1; ++i)
+        avg_variation += ( magnitude(coeffsBuffer.at(i)) - magnitude(coeffsBuffer.at(i+1)) ) / coeffsBuffer.size();
 
-    return false;
+    // Compute standard deviation
+    float std_variation = pow(magnitude(coeffs)-magnitude(coeffsBuffer.front()) - avg_variation, 2);
+    for (unsigned int i = 0; i < coeffsBuffer.size()-1; ++i)
+        std_variation += (pow(magnitude(coeffsBuffer.at(i))-magnitude(coeffsBuffer.at(i+1)) - avg_variation, 2)) / coeffsBuffer.size();
+    std_variation = sqrt(std_variation);
+
+    // Check result against variation threshold
+    if ((avg_variation < CONVERGENCE_THRESHOLD) && (std_variation < CONVERGENCE_THRESHOLD))
+    {
+#ifdef DEBUG_MODE
+        SPQR_INFO("PGLearner converged!");
+        SPQR_INFO("Coefficients values:");
+        for (unsigned int i = 0; i < coeffs.size(); ++i)
+            SPQR_INFO("\t" << coeffs.at(i));
+#endif
+        return true;
+    }
+    else
+        return false;
 }
+
 
 /* TODO */
 void DiveHandler::PGLearner::generatePerturbations()
@@ -97,6 +131,7 @@ void DiveHandler::PGLearner::generatePerturbations()
 /*
  * TOCOMMENT
  */
+
 float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
 {
     // Dimensions check
@@ -106,6 +141,7 @@ float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
 }
 
 /* TODO */
+
 bool DiveHandler::PGLearner::updateCoeffs()
 {
     // while stop criterion: MAX_ITER || converged()
@@ -139,6 +175,7 @@ DiveHandler::DiveHandler():
 /*
  * Default class destructor: destroys the learning agent and deallocates memory.
  */
+
 DiveHandler::~DiveHandler()
 {
     if (learner) delete learner;
