@@ -97,10 +97,14 @@ class DiveHandler : public DiveHandlerBase
         std::vector<float> coeffs;
         // Set of fixed parameters defining the cost funcion
         std::map<std::string, float> params;
+
+        // Pointer to the DiveHandler object whose coefficients are learned
+        DiveHandler* diveHandler_ptr;
 		
         public:
         // Default constructor
-        CoeffsLearner(int _nCoeffs, float _initValue): coeffs(_nCoeffs, _initValue) { }
+        CoeffsLearner(int _nCoeffs, float _initValue, DiveHandler* _dhPtr):
+            coeffs(_nCoeffs, _initValue), diveHandler_ptr(_dhPtr) { }
 
         // Setter/getter for the coefficients
         void setCoeffs(const std::vector<float>& _coeffs);
@@ -119,13 +123,13 @@ class DiveHandler : public DiveHandlerBase
     class PGLearner : public CoeffsLearner
     {
         typedef std::list< std::vector<float> > PGbuffer;
-		
+
         private:
 
         // Memory buffer for the PG algorithm
         PGbuffer coeffsBuffer;
         // Set of perturbations to be performed
-        std::vector<float> perturbations;
+        PGbuffer perturbationsBuffer;
 
         // Check for convergence of the algorithm
         bool converged();
@@ -133,12 +137,13 @@ class DiveHandler : public DiveHandlerBase
         public:
 
         // Default constructor
-        PGLearner(int _nCoeffs, float _epsilon = EPSILON, int _T = T, float _initValue = 0.0, bool randomize = false);
+        PGLearner(DiveHandler* _dhPtr, int _nCoeffs, float _epsilon = EPSILON,
+                  int _T = T, float _initValue = 0.0, bool randomize = false);
 
         // Generate a set of perturbations for the current policy
         void generatePerturbations();
 
-        // Evaluate a set of perturbations with the cost function
+        // Evaluate a single policy perturbation with the cost function
         float evaluatePerturbation( std::vector<float> R );
 
         // Update coefficients performing a step of the learning algorithm
@@ -172,6 +177,9 @@ private:
     // Computes parameters using the ball estimated position and velocity
     void estimateDiveTimes();
     void estimateBallProjection();
+
+    // Compute the overall time the goalie needs to dive and then recover its position
+    inline float computeDiveAndRecoverTime(float alpha1, float alpha2);
 	
 public:
 

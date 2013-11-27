@@ -16,7 +16,6 @@
 
 #include <stdlib.h>
 #include <time.h>
-#include "Utils/Utils.h"
 
 #include "DiveHandler.h"
 
@@ -61,9 +60,9 @@ void DiveHandler::CoeffsLearner::setParam(const std::string& _key, float _value)
  * - An initial value for the learning coefficients (or an upper bound for the random initialization of those);
  * - A flag indicating whether a fixed or random initialization has to be performed.
  */
-DiveHandler::PGLearner::PGLearner( int _nCoeffs, float _epsilon, int _T, float _initValue, bool randomize ):
+DiveHandler::PGLearner::PGLearner( DiveHandler* _dhPtr, int _nCoeffs, float _epsilon, int _T, float _initValue, bool randomize ):
     // Initialize the base class
-    CoeffsLearner(_nCoeffs, _initValue)
+    CoeffsLearner(_nCoeffs, _initValue, _dhPtr)
 {
     // Initializing coefficients
     if(randomize)
@@ -82,6 +81,10 @@ DiveHandler::PGLearner::PGLearner( int _nCoeffs, float _epsilon, int _T, float _
 /* TODO */
 bool DiveHandler::PGLearner::converged()
 {
+    // alpha1 alpha2 converge
+
+    // if yes, store values in a file
+
     return false;
 }
 
@@ -91,17 +94,25 @@ void DiveHandler::PGLearner::generatePerturbations()
     // store perturbations
 }
 
-/* TODO */
+/*
+ * TOCOMMENT
+ */
 float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
 {
-    // evaluate perturbations
-    return 0.0;
+    // Dimensions check
+    assert(R.size() == coeffs.size());
+    // Generate perturbated policy and call the DiveHandler object for evaluation
+    return diveHandler_ptr->computeDiveAndRecoverTime(coeffs.at(0) + R.at(0), coeffs.at(1) + R.at(1));
 }
 
 /* TODO */
 bool DiveHandler::PGLearner::updateCoeffs()
 {
-    // while stop criterion: MAX_ITER || alpha1 alpha2 converge
+    // while stop criterion: MAX_ITER || converged()
+    // generate the set of perturbation and store it in the private member
+    // for each perturbation, evaluate it with the objective function and store the result in a temporary container
+    // for each parameter, compute the 3 Avg values and determine An
+    // update the coeffs with -(A/abs(A))*ETA where A is the 2D vector of Ans
     return false;
 }
 
@@ -114,9 +125,15 @@ bool DiveHandler::PGLearner::updateCoeffs()
  * Default class constructor: initializes all parameters and generates the learning agent.
  */
 DiveHandler::DiveHandler():
-    diveType(none), tBall2Goal(SPQR::FIELD_DIMENSION_Y), tDive(0.0),
-    tBackInPose(0.0), learner(new PGLearner(2, EPSILON, T, 1.0))
+    diveType(none), learner(new PGLearner(this, 2, EPSILON, T, 1.0)),
+    tBall2Goal(SPQR::FIELD_DIMENSION_Y), tDive(0.0), tBackInPose(0.0)
 {
+#ifdef DEBUG_MODE
+    SPQR_INFO("Initializing PGlearner...");
+    std::vector<float> coeffs = learner->getCoeffs();
+    SPQR_INFO("Coefficients: alpha 1 = " << coeffs.at(0) << ", alpha 2 = " << coeffs.at(1));
+    SPQR_INFO("Parameters: epsilon = " << learner->getParam("epsilon") << ", T = " << learner->getParam("T"));
+#endif
 }
 
 /*
@@ -226,6 +243,14 @@ void DiveHandler::estimateDiveTimes()
 
 }
 
+/*
+ * TOCOMMENT
+ */
+inline float DiveHandler::computeDiveAndRecoverTime(float alpha1, float alpha2)
+{
+    return alpha2*( alpha1*tBall2Goal - tDive ) + tBackInPose;
+}
+
 /* TODO */
 /*
  * The module update function.
@@ -282,6 +307,10 @@ void DiveHandler::update(DiveHandle& diveHandle)
                 // adjust PG parameters wrt reward
             }
 
+#ifdef DEBUG_MODE
+            SPQR_INFO( "Estimated overall time to dive and recover position: " <<
+                      computeDiveAndRecoverTime( (learner->getCoeffs()).at(0), (learner->getCoeffs()).at(1) ) );
+#endif
             // Compute the dive time using the current coefficients as T = alpha2 * (alpha1*T_PAPO - T_dive)
             float diveTime = (learner->getCoeffs()).at(1) * ( (learner->getCoeffs()).at(0) * tBall2Goal - tDive );
             // Update the DiveHandle
