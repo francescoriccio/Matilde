@@ -27,6 +27,7 @@
 // Debug messages template
 #define SPQR_ERR(x) std::cerr << "\033[22;31;1m" <<"[DiveHandler] " << x << "\033[0m"<< std::endl;
 #define SPQR_INFO(x) std::cerr << "\033[22;34;1m" <<"[DiveHandler] " << x << "\033[0m" << std::endl;
+#define SPQR_JESUS(x) std::cerr << "\033[22;36;1m" <<"[DiveHandler] " << x << "\033[0m" << std::endl;
 
 MAKE_MODULE(DiveHandler, SPQR-Modules)
 
@@ -62,7 +63,6 @@ void DiveHandler::CoeffsLearner::setParam(const std::string& _key, float _value)
 
 
 /** --------------------- CoeffsLearner: Policy Gradient --------------------- */
-
 
 /*
  * Default constructor. Initializes the algorithm parameters and coefficients.
@@ -149,25 +149,25 @@ void DiveHandler::PGLearner::generatePerturbations()
 
     }
 #else
-    int r1 = -1;
-    for(unsigned int j=0; j<3; ++j)
+    for(int j=-1; j<2; ++j)
     {
-        std::vector<float> perturbation(coeffs);
+        float coeff1 = coeffs.at(0) + j*params["epsilon"];
 
-        perturbation.at(0) +=  (r1)*params["epsilon"];
-
-        int r2 = -1;
-        for(unsigned int k=0; k<3; ++k)
+        for(int k=-1; k<2; ++k)
         {
-            perturbation.at(1) +=  (r2)*params["epsilon"];
+            float coeff2 = coeffs.at(1) + k*params["epsilon"];
 
+            std::vector<float> perturbation;
+            perturbation.push_back(coeff1);
+            perturbation.push_back(coeff2);
+
+            // update the perturbated coefficients
             perturbationsBuffer.push_back(perturbation);
+
 #ifdef DEBUG_MODE
-        SPQR_INFO("Generated perturbation: [" << perturbation.at(0) << ", " << perturbation.at(1) << "]");
+            SPQR_INFO("Generated perturbation: ("<<j<<", "<<k<<") -> [" << perturbation.at(0) << ", " << perturbation.at(1) << "] \n");
 #endif
-            ++r2;
         }
-        ++r1;
     }
 #endif
 
@@ -205,13 +205,21 @@ void DiveHandler::PGLearner::updateParams(std::list<float> rewards)
 }
 
 /* TODO */
+
+/*TODO*/
 bool DiveHandler::PGLearner::updateCoeffs()
 {
     // while stop criterion: MAX_ITER || converged()
-    // generate the set of perturbation and store it in the private member
-    // for each perturbation, evaluate it with the objective function and store the result in a temporary container
-    // for each parameter, compute the 3 Avg values and determine An
-    // update the coeffs with -(A/abs(A))*ETA where A is the 2D vector of Ans
+    if( iter_count == MAX_ITER || converged() ) return false;
+    else
+    {
+        generatePerturbations();
+        // for each perturbation, evaluate it with the objective function and store the result in a temporary container
+        // for each parameter, compute the 3 Avg values and determine An
+        // update the coeffs with -(A/abs(A))*ETA where A is the 2D vector of Ans
+
+        ++iter_count;
+    }
     return false;
 }
 
@@ -231,6 +239,8 @@ DiveHandler::DiveHandler():
     std::vector<float> coeffs = learner->getCoeffs();
     SPQR_INFO("Coefficients: alpha 1 = " << coeffs.at(0) << ", alpha 2 = " << coeffs.at(1));
     SPQR_INFO("Parameters: epsilon = " << learner->getParam("epsilon") << ", T = " << learner->getParam("T"));
+
+    SPQR_JESUS("jesus");
 
     learner->updateCoeffs();
 #endif

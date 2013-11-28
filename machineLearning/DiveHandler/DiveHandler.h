@@ -99,13 +99,15 @@ class DiveHandler : public DiveHandlerBase
         // Set of fixed parameters defining the cost funcion
         std::map<std::string, float> params;
 
+        int iter_count;
+
         // Pointer to the DiveHandler object whose coefficients are learned
         DiveHandler* diveHandler_ptr;
 		
         public:
         // Default constructor
         CoeffsLearner(int _nCoeffs, float _initValue, DiveHandler* _dhPtr):
-            coeffs(_nCoeffs, _initValue), diveHandler_ptr(_dhPtr) { }
+            coeffs(_nCoeffs, _initValue), iter_count(0), diveHandler_ptr(_dhPtr) { }
 
         // Setter/getter for the coefficients
         void setCoeffs(const std::vector<float>& _coeffs);
