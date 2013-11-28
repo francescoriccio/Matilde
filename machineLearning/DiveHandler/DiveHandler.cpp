@@ -82,7 +82,7 @@ DiveHandler::PGLearner::PGLearner( DiveHandler* _dhPtr, int _nCoeffs, float _eps
         // Random initialization in [0, INIT_VALUE]
         srand(time(NULL));
         for( int i=0; i<_nCoeffs; ++i)
-            coeffs.at(i) = (rand()/RAND_MAX)*_initValue;
+            coeffs.at(i) = (static_cast<float>(rand()%101)/100 ) *_initValue;
     }
 
     // Initializing parameters
@@ -124,17 +124,18 @@ bool DiveHandler::PGLearner::converged()
 /* TOTEST&COMMENT */
 void DiveHandler::PGLearner::generatePerturbations()
 {
-  srand(time(NULL));
-  std::vector<float> perturbation(coeffs);
-  
-  for(int i=0; i<params["T"]; ++i)
-  {
-	std::vector<float> perturbation(coeffs);
-	
-	for(unsigned int j=0; j<coeffs.size(); ++j)
-	  perturbation.at(j) += (rand()%3 -1)*params["epsilon"];
-	
-	perturbationsBuffer.push_back(perturbation);
+    srand(time(NULL));
+    for(int i=0; i<params["T"]; ++i)
+    {
+        std::vector<float> perturbation(coeffs);
+
+        for(unsigned int j=0; j<coeffs.size(); ++j)
+            perturbation.at(j) += (rand()%3 -1)*params["epsilon"];
+
+#ifdef DEBUG_MODE
+        SPQR_INFO("Generated perturbation: [" << perturbation.at(0) << ", " << perturbation.at(1) << "]");
+#endif
+        perturbationsBuffer.push_back(perturbation);
   }
 }
 
@@ -148,16 +149,22 @@ float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
 }
 
 /*TOTEST&COMMENT*/
-void DiveHandler::PGLearner::updateParams(std::vector<float> rewards)
+void DiveHandler::PGLearner::updateParams(std::list<float> rewards)
 {
-  float positive_count = 0;
-  float negative_count = 0;
-  
-  for(unsigned int i=0; i<rewards.size(); ++i)
-  {
-	if( rewards.at(i) > 0) positive_count += rewards.at(i); 
-	if( rewards.at(i) < 0) negative_count += rewards.at(i); 
-  }
+    float reward_score = 0.0;
+    int discount_exp = 0;
+    std::list<float>::const_iterator i = rewards.begin();
+    while (i != rewards.end())
+    {
+        // Computing discounted rewards
+        reward_score += (*i) * pow(GAMMA, discount_exp);
+        ++i; ++discount_exp;
+    }
+
+    //Adjusting PG parameters according to the obtained score
+    setParam("epsilon", exp( reward_score / rewards.size() ) * getParam("epsilon"));
+    setParam("T", exp( reward_score / rewards.size() ) * getParam("T"));
+
 }
 
 /* TODO */
@@ -179,7 +186,7 @@ bool DiveHandler::PGLearner::updateCoeffs()
  * Default class constructor: initializes all parameters and generates the learning agent.
  */
 DiveHandler::DiveHandler():
-    diveType(none), learner(new PGLearner(this, 2, EPSILON, T, 1.0)),
+    diveType(none), learner(new PGLearner(this, 2, EPSILON, T, 1.0, true)),
     tBall2Goal(SPQR::FIELD_DIMENSION_Y), tDive(0.0), tBackInPose(0.0)
 {
 #ifdef DEBUG_MODE
@@ -187,6 +194,8 @@ DiveHandler::DiveHandler():
     std::vector<float> coeffs = learner->getCoeffs();
     SPQR_INFO("Coefficients: alpha 1 = " << coeffs.at(0) << ", alpha 2 = " << coeffs.at(1));
     SPQR_INFO("Parameters: epsilon = " << learner->getParam("epsilon") << ", T = " << learner->getParam("T"));
+
+    learner->updateCoeffs();
 #endif
 }
 

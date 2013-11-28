@@ -56,7 +56,7 @@ END_MODULE
 #define BUFFER_DIM 10
 #define ETA 1
 #define EPSILON 0.5
-#define T 5
+#define T 15
 
 
 // Module class declaration
@@ -146,8 +146,9 @@ class DiveHandler : public DiveHandlerBase
 
         // Evaluate a single policy perturbation with the cost function
         float evaluatePerturbation( std::vector<float> R );
-		
-		void updateParams(std::vector<float> rewards);
+
+        // Update the PG parameters according to the obtained rewards
+        void updateParams(std::list<float> rewards);
 
         // Update coefficients performing a step of the learning algorithm
         virtual bool updateCoeffs();
