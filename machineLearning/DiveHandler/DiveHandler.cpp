@@ -27,7 +27,7 @@
 // Debug messages template
 #define SPQR_ERR(x) std::cerr << "\033[22;31;1m" <<"[DiveHandler] " << x << "\033[0m"<< std::endl;
 #define SPQR_INFO(x) std::cerr << "\033[22;34;1m" <<"[DiveHandler] " << x << "\033[0m" << std::endl;
-#define SPQR_JESUS(x) std::cerr << "\033[22;36;1m" <<"[DiveHandler] " << x << "\033[0m" << std::endl;
+#define SPQR_JESUS(x) std::cerr << "\033[0;32;1m" <<"[DiveHandler] " << x << "\033[0m" << std::endl;
 
 MAKE_MODULE(DiveHandler, SPQR-Modules)
 
@@ -165,13 +165,14 @@ void DiveHandler::PGLearner::generatePerturbations()
             perturbationsBuffer.push_back(perturbation);
 
 #ifdef DEBUG_MODE
-            SPQR_INFO("Generated perturbation: ("<<j<<", "<<k<<") -> [" << perturbation.at(0) << ", " << perturbation.at(1) << "] \n");
+            SPQR_INFO("Generated perturbation: ("<<j<<", "<<k<<") -> [" << perturbation.at(0) << ", " << perturbation.at(1) << "]");
 #endif
         }
     }
 #endif
 
 }
+
 
 /* TOCOMMENT */
 float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
@@ -201,7 +202,6 @@ void DiveHandler::PGLearner::updateParams(std::list<float> rewards)
 #ifdef RAND_PERMUTATIONS
     setParam("T", exp( reward_score / rewards.size() ) * getParam("T"));
 #endif
-
 }
 
 /* TODO */
@@ -209,18 +209,36 @@ void DiveHandler::PGLearner::updateParams(std::list<float> rewards)
 /*TODO*/
 bool DiveHandler::PGLearner::updateCoeffs()
 {
-    // while stop criterion: MAX_ITER || converged()
-    if( iter_count == MAX_ITER || converged() ) return false;
+    //if( iter_count == MAX_ITER || converged() )
+    if(false)
+    {
+#ifdef DEBUG_MODE
+        SPQR_JESUS("the learning algorithm converged!");
+#endif
+
+        return false;
+    }
     else
     {
         generatePerturbations();
+
         // for each perturbation, evaluate it with the objective function and store the result in a temporary container
+        std::vector<float> evaluatedPerturbations;
+        for(unsigned int i=0; i<perturbationsBuffer.size(); ++i)
+        {
+#ifdef DEBUG_MODE
+            SPQR_INFO("evaluation of the "<<i+1<<"th perturbation: " << evaluatePerturbation(perturbationsBuffer.at(i)) );
+#endif
+            evaluatedPerturbations.push_back( evaluatePerturbation(perturbationsBuffer.at(i)) );
+        }
+
         // for each parameter, compute the 3 Avg values and determine An
         // update the coeffs with -(A/abs(A))*ETA where A is the 2D vector of Ans
 
         ++iter_count;
+
+        return true;
     }
-    return false;
 }
 
 
@@ -240,8 +258,6 @@ DiveHandler::DiveHandler():
     SPQR_INFO("Coefficients: alpha 1 = " << coeffs.at(0) << ", alpha 2 = " << coeffs.at(1));
     SPQR_INFO("Parameters: epsilon = " << learner->getParam("epsilon") << ", T = " << learner->getParam("T"));
 
-    SPQR_JESUS("jesus");
-
     learner->updateCoeffs();
 #endif
 }
@@ -249,7 +265,6 @@ DiveHandler::DiveHandler():
 /*
  * Default class destructor: destroys the learning agent and deallocates memory.
  */
-
 DiveHandler::~DiveHandler()
 {
     if (learner) delete learner;
@@ -311,7 +326,6 @@ void DiveHandler::estimateBallProjection()
 
     // Updating the class parameters with the obtained value
     ballProjectionIntercept = yIntercept;
-
 }
 
 /*
@@ -351,7 +365,6 @@ void DiveHandler::estimateDiveTimes()
 
     // Total time needed to recover the original position
     tBackInPose = tRecover + tReposition;
-
 }
 
 /*
@@ -447,5 +460,4 @@ void DiveHandler::update(DiveHandle& diveHandle)
             diveHandle.diveType = diveType;
         }
     }
-
 }
