@@ -22,6 +22,7 @@
 
 // Uncomment to have debug information
 #define DEBUG_MODE
+//#define RAND_PERMUTATIONS
 
 // Debug messages template
 #define SPQR_ERR(x) std::cerr << "\033[22;31;1m" <<"[DiveHandler] " << x << "\033[0m"<< std::endl;
@@ -87,7 +88,12 @@ DiveHandler::PGLearner::PGLearner( DiveHandler* _dhPtr, int _nCoeffs, float _eps
 
     // Initializing parameters
     setParam("epsilon", _epsilon);
+
+#ifdef RAND_PERMUTATIONS
     setParam("T", _T);
+#else
+    setParam("T", pow(3,coeffs.size()));
+#endif
 }
 
 /* TOTEST&COMMENT */
@@ -124,7 +130,10 @@ bool DiveHandler::PGLearner::converged()
 /* TOTEST&COMMENT */
 void DiveHandler::PGLearner::generatePerturbations()
 {
+
+#ifdef RAND_PERMUTATIONS
     srand(time(NULL));
+
     for(int i=0; i<params["T"]; ++i)
     {
         std::vector<float> perturbation(coeffs);
@@ -132,11 +141,36 @@ void DiveHandler::PGLearner::generatePerturbations()
         for(unsigned int j=0; j<coeffs.size(); ++j)
             perturbation.at(j) += (rand()%3 -1)*params["epsilon"];
 
+        perturbationsBuffer.push_back(perturbation);
+
 #ifdef DEBUG_MODE
         SPQR_INFO("Generated perturbation: [" << perturbation.at(0) << ", " << perturbation.at(1) << "]");
 #endif
-        perturbationsBuffer.push_back(perturbation);
-  }
+
+    }
+#else
+    int r1 = -1;
+    for(unsigned int j=0; j<3; ++j)
+    {
+        std::vector<float> perturbation(coeffs);
+
+        perturbation.at(0) +=  (r1)*params["epsilon"];
+
+        int r2 = -1;
+        for(unsigned int k=0; k<3; ++k)
+        {
+            perturbation.at(1) +=  (r2)*params["epsilon"];
+
+            perturbationsBuffer.push_back(perturbation);
+#ifdef DEBUG_MODE
+        SPQR_INFO("Generated perturbation: [" << perturbation.at(0) << ", " << perturbation.at(1) << "]");
+#endif
+            ++r2;
+        }
+        ++r1;
+    }
+#endif
+
 }
 
 /* TOCOMMENT */
@@ -163,7 +197,10 @@ void DiveHandler::PGLearner::updateParams(std::list<float> rewards)
 
     //Adjusting PG parameters according to the obtained score
     setParam("epsilon", exp( reward_score / rewards.size() ) * getParam("epsilon"));
+
+#ifdef RAND_PERMUTATIONS
     setParam("T", exp( reward_score / rewards.size() ) * getParam("T"));
+#endif
 
 }
 
