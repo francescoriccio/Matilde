@@ -147,13 +147,29 @@ public:
                                 theDiveHandle.ballProjectionEstimate > -SPQR::GOALIE_FAR_LIMIT_Y && //if the ball is directed in the goal mirror
                                 theBallModel.estimate.getEndPosition(theFieldDimensions.ballFriction).x < 0) //and his velocity is enought to overcome it
                         {
+
+#ifdef GOALIE_DEBUG_MODE
+                            if ((Timestamp() - lastTimeRoleSent).getMs() > 1000.0)
+                            {
+                                cerr << "\033[22;34;1m\t[Goalie] DiveHandle::ballProjectionEstimate: " << theDiveHandle.ballProjectionEstimate << " \033[0m" << endl;
+                                cerr << "\033[22;34;1m\t[Goalie] DiveHandle::diveType: " << theDiveHandle.diveType << " \033[0m" << endl;
+                                cerr << "\033[0;32;1m\t[Goalie] DiveHandle::diveTimer: " << theDiveHandle.diveTime << " \033[0m" << endl;
+                            }
+#endif
                             if( theDiveHandle.diveTime == 0.0 ) // best timing provided by the diveHandler
                             {
+#ifdef GOALIE_DEBUG_MODE
+                                cerr << "\033[0;31;1m\t[Goalie] Dive! \033[0m" << endl;
+#endif
                                 if(theDiveHandle.diveType == lDive) return dive_left;
                                 else if(theDiveHandle.diveType == rDive) return dive_right;
+
+                                else if(theDiveHandle.diveType == lcloseDive) return dive_left;
+                                else if(theDiveHandle.diveType == rcloseDive) return dive_right;
+
 //                                else if(theDiveHandle.diveType == lcloseDive) return close_dive_left;
 //                                else if(theDiveHandle.diveType == rcloseDive) return close_dive_right;
-                                else return stop_ball; // or nothing
+                                else return stop_ball; // or nothing erasing this line
                             }
                         }
                     }
