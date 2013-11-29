@@ -99,6 +99,7 @@ class DiveHandler : public DiveHandlerBase
         // Set of fixed parameters defining the cost funcion
         std::map<std::string, float> params;
 
+        // Iteration counter
         int iter_count;
 
         // Pointer to the DiveHandler object whose coefficients are learned

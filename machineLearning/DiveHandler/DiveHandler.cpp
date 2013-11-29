@@ -27,7 +27,7 @@
 // Debug messages template
 #define SPQR_ERR(x) std::cerr << "\033[22;31;1m" <<"[DiveHandler] " << x << "\033[0m"<< std::endl;
 #define SPQR_INFO(x) std::cerr << "\033[22;34;1m" <<"[DiveHandler] " << x << "\033[0m" << std::endl;
-#define SPQR_JESUS(x) std::cerr << "\033[0;32;1m" <<"[DiveHandler] " << x << "\033[0m" << std::endl;
+#define SPQR_SUCCESS(x) std::cerr << "\033[0;32;1m" <<"[DiveHandler] " << x << "\033[0m" << std::endl;
 
 MAKE_MODULE(DiveHandler, SPQR-Modules)
 
@@ -94,37 +94,46 @@ DiveHandler::PGLearner::PGLearner( DiveHandler* _dhPtr, int _nCoeffs, float _eps
 #else
     setParam("T", pow(3,coeffs.size()));
 #endif
+
+    // Initialize buffers
+    coeffsBuffer.reserve(BUFFER_DIM);
+    perturbationsBuffer.reserve(T);
 }
 
 /* TOTEST&COMMENT */
 bool DiveHandler::PGLearner::converged()
 {
     // Average every coefficients variation across the buffer
-
-    // Compute mean
-    float avg_variation = magnitude(coeffs) - magnitude(coeffsBuffer.front());
-    for (unsigned int i = 0; i < coeffsBuffer.size()-1; ++i)
-        avg_variation += ( magnitude(coeffsBuffer.at(i)) - magnitude(coeffsBuffer.at(i+1)) ) / coeffsBuffer.size();
-
-    // Compute standard deviation
-    float std_variation = pow(magnitude(coeffs)-magnitude(coeffsBuffer.front()) - avg_variation, 2);
-    for (unsigned int i = 0; i < coeffsBuffer.size()-1; ++i)
-        std_variation += (pow(magnitude(coeffsBuffer.at(i))-magnitude(coeffsBuffer.at(i+1)) - avg_variation, 2)) / coeffsBuffer.size();
-    std_variation = sqrt(std_variation);
-
-    // Check result against variation threshold
-    if ((avg_variation < CONVERGENCE_THRESHOLD) && (std_variation < CONVERGENCE_THRESHOLD))
-    {
-#ifdef DEBUG_MODE
-        SPQR_INFO("PGLearner converged!");
-        SPQR_INFO("Coefficients values:");
-        for (unsigned int i = 0; i < coeffs.size(); ++i)
-            SPQR_INFO("\t" << coeffs.at(i));
-#endif
-        return true;
-    }
-    else
+    if (coeffsBuffer.empty())
         return false;
+    else
+    {
+        // Compute variations mean
+        float avg_variation = magnitude(coeffs) - magnitude(coeffsBuffer.front());
+
+        for (unsigned int i = 0; i < coeffsBuffer.size()-1; ++i)
+            avg_variation += ( magnitude(coeffsBuffer.at(i)) - magnitude(coeffsBuffer.at(i+1)) ) / coeffsBuffer.size();
+
+        // Compute variations std
+        float std_variation = pow(magnitude(coeffs)-magnitude(coeffsBuffer.front()) - avg_variation, 2);
+        for (unsigned int i = 0; i < coeffsBuffer.size()-1; ++i)
+            std_variation += (pow(magnitude(coeffsBuffer.at(i))-magnitude(coeffsBuffer.at(i+1)) - avg_variation, 2)) / coeffsBuffer.size();
+        std_variation = sqrt(std_variation);
+
+        // Check result against variation threshold
+        if ((avg_variation < CONVERGENCE_THRESHOLD) && (std_variation < CONVERGENCE_THRESHOLD))
+        {
+    #ifdef DEBUG_MODE
+            SPQR_SUCCESS("PGLearner converged!");
+            SPQR_SUCCESS("Coefficients values:");
+            for (unsigned int i = 0; i < coeffs.size(); ++i)
+                SPQR_SUCCESS("\t" << coeffs.at(i));
+    #endif
+            return true;
+        }
+        else
+            return false;
+    }
 }
 
 /* TOTEST&COMMENT */
@@ -204,40 +213,63 @@ void DiveHandler::PGLearner::updateParams(std::list<float> rewards)
 #endif
 }
 
-/* TODO */
-
 /*TODO*/
 bool DiveHandler::PGLearner::updateCoeffs()
 {
-    //if( iter_count == MAX_ITER || converged() )
-    if(false)
-    {
-#ifdef DEBUG_MODE
-        SPQR_JESUS("the learning algorithm converged!");
-#endif
-
+    if( iter_count == MAX_ITER || converged() )
         return false;
-    }
     else
-    {
-        generatePerturbations();
-
-        // for each perturbation, evaluate it with the objective function and store the result in a temporary container
-        std::vector<float> evaluatedPerturbations;
-        for(unsigned int i=0; i<perturbationsBuffer.size(); ++i)
         {
-#ifdef DEBUG_MODE
-            SPQR_INFO("evaluation of the "<<i+1<<"th perturbation: " << evaluatePerturbation(perturbationsBuffer.at(i)) );
-#endif
-            evaluatedPerturbations.push_back( evaluatePerturbation(perturbationsBuffer.at(i)) );
+            generatePerturbations();
+
+            // for each perturbation, evaluate it with the objective function and store the result in a temporary container
+            std::vector<float> evaluatedPerturbations;
+            for(unsigned int i=0; i<perturbationsBuffer.size(); ++i)
+            {
+    #ifdef DEBUG_MODE
+                SPQR_INFO("evaluation of the "<<i+1<<"th perturbation: " << evaluatePerturbation(perturbationsBuffer.at(i)) );
+    #endif
+                evaluatedPerturbations.push_back( evaluatePerturbation(perturbationsBuffer.at(i)) );
+            }
+
+            std::vector<float> coeffs_avgGradient(coeffs.size());
+
+            // for each parameter, compute the 3 Avg values and determine An
+            for( unsigned int n=0; n<coeffs.size(); ++n )
+            {
+                int avg_selector = 0;
+                float avg_minus = 0.0 , avg_zero = 0.0, avg_plus = 0.0;
+                for( unsigned int i=0; i<evaluatedPerturbations.size(); i+pow(3,n) )
+                {
+                    for( unsigned int k=i; k<i+pow(3,n); ++k )
+                    {
+                        float evaluation = evaluatedPerturbations.at(i+k)/3;
+
+                        if( (avg_selector)%3 == 0 ) avg_minus += evaluation;
+                        if( (avg_selector)%3 == 1 ) avg_zero += evaluation;
+                        if( (avg_selector)%3 == 2 ) avg_plus += evaluation;
+                    }
+                    ++avg_selector;
+                }
+
+                // evaluate An
+                if( avg_zero <= avg_plus && avg_zero<= avg_minus )
+                    coeffs_avgGradient.at(coeffs.size() - (n +1)) = 0.0;
+                else
+                    coeffs_avgGradient.at(coeffs.size() - (n +1)) = avg_plus - avg_minus;
+            }
+
+            /*TODO: update coeffsBuffer (coeffsBuffer must be a list)*/
+            /*TODO: random perturbation case*/
+
+            // update the coeffs with -(A/abs(A))*ETA where A is the n dimensional vector of Ans
+            for( unsigned int i=0; i<coeffs_avgGradient.size(); ++i )
+                coeffs.at(i) += - (coeffs_avgGradient.at(i)/magnitude(coeffs_avgGradient)) * ETA;
+
+            ++iter_count;
+
+            return true;
         }
-
-        // for each parameter, compute the 3 Avg values and determine An
-        // update the coeffs with -(A/abs(A))*ETA where A is the 2D vector of Ans
-
-        ++iter_count;
-
-        return true;
     }
 }
 
