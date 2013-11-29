@@ -94,30 +94,40 @@ DiveHandler::PGLearner::PGLearner( DiveHandler* _dhPtr, int _nCoeffs, float _eps
 #else
     setParam("T", pow(3,coeffs.size()));
 #endif
-
-    // Initialize buffers
-    coeffsBuffer.reserve(BUFFER_DIM);
-    perturbationsBuffer.reserve(T);
 }
 
 /* TOTEST&COMMENT */
 bool DiveHandler::PGLearner::converged()
 {
-    // Average every coefficients variation across the buffer
-    if (coeffsBuffer.empty())
+    // Skip convergence check if the buffer is not full
+    if (coeffsBuffer.size() < BUFFER_DIM)
         return false;
+    // Average every coefficients variation across the buffer
     else
     {
         // Compute variations mean
-        float avg_variation = magnitude(coeffs) - magnitude(coeffsBuffer.front());
+        // Delta previous to current step
+        float avg_variation = (magnitude(coeffs) - magnitude(coeffsBuffer.front()))/coeffsBuffer.size() ;
+        // Iterate over the whole buffer and compute deltas from step i-1 to i
+        PGbuffer::const_iterator i = coeffsBuffer.begin();
+        PGbuffer::const_iterator j = coeffsBuffer.begin(); ++j;
+        while (j != coeffsBuffer.end())
+        {
+            avg_variation += ( magnitude(*i) - magnitude(*j) )/coeffsBuffer.size();
+            ++i; ++j;
+        }
 
-        for (unsigned int i = 0; i < coeffsBuffer.size()-1; ++i)
-            avg_variation += ( magnitude(coeffsBuffer.at(i)) - magnitude(coeffsBuffer.at(i+1)) ) / coeffsBuffer.size();
-
-        // Compute variations std
-        float std_variation = pow(magnitude(coeffs)-magnitude(coeffsBuffer.front()) - avg_variation, 2);
-        for (unsigned int i = 0; i < coeffsBuffer.size()-1; ++i)
-            std_variation += (pow(magnitude(coeffsBuffer.at(i))-magnitude(coeffsBuffer.at(i+1)) - avg_variation, 2)) / coeffsBuffer.size();
+        // Compute variations standard deviation
+        // Delta previous to current step
+        float std_variation = pow(magnitude(coeffs)-magnitude(coeffsBuffer.front()) - avg_variation, 2) / coeffsBuffer.size();
+        // Iterate over the whole buffer and compute deltas from step i-1 to i
+        PGbuffer::const_iterator k = coeffsBuffer.begin();
+        PGbuffer::const_iterator t = coeffsBuffer.begin(); ++t;
+        while (t != coeffsBuffer.end())
+        {
+            std_variation += (pow(magnitude(*k)-magnitude(*t) - avg_variation, 2)) / coeffsBuffer.size();
+            ++k; ++t;
+        }
         std_variation = sqrt(std_variation);
 
         // Check result against variation threshold
@@ -139,6 +149,9 @@ bool DiveHandler::PGLearner::converged()
 /* TOTEST&COMMENT */
 void DiveHandler::PGLearner::generatePerturbations()
 {
+    // Clean up the buffer
+    if(! perturbationsBuffer.empty())
+        perturbationsBuffer.clear();
 
 #ifdef RAND_PERMUTATIONS
     srand(time(NULL));
@@ -158,28 +171,52 @@ void DiveHandler::PGLearner::generatePerturbations()
 
     }
 #else
-    for(int j=-1; j<2; ++j)
-    {
-        float coeff1 = coeffs.at(0) + j*params["epsilon"];
+    // Initialize a placeholder for perturbations
+    std::vector<float> perturbation (coeffs.size(),0.0);
 
-        for(int k=-1; k<2; ++k)
-        {
-            float coeff2 = coeffs.at(1) + k*params["epsilon"];
-
-            std::vector<float> perturbation;
-            perturbation.push_back(coeff1);
-            perturbation.push_back(coeff2);
-
-            // update the perturbated coefficients
-            perturbationsBuffer.push_back(perturbation);
+    // Generate all possible combinations recursively
+    generatePerturbations(&perturbation, 0);
 
 #ifdef DEBUG_MODE
-            SPQR_INFO("Generated perturbation: ("<<j<<", "<<k<<") -> [" << perturbation.at(0) << ", " << perturbation.at(1) << "]");
-#endif
-        }
+    PGbuffer::const_iterator printer = perturbationsBuffer.begin();
+    while(printer != perturbationsBuffer.end())
+    {
+        SPQR_INFO("Generated perturbation: [" << (*printer).at(0) << ", " << (*printer).at(1) << "]");
+        ++printer;
     }
 #endif
 
+#endif
+
+}
+
+/* TOTEST&COMMENT */
+void DiveHandler::PGLearner::generatePerturbations(std::vector<float>* partial_perturbation, unsigned int index)
+{
+    if (index == partial_perturbation->size()-1)
+    {
+        // Base case: generate all combinations of the last coefficient for the current partial vector
+        for (int perturbation_type = -1; perturbation_type <= 1; ++perturbation_type)
+        {
+            // Compute last index and generate the final perturbation
+            std::vector<float> perturbation (*partial_perturbation);
+            perturbation.at(index) = coeffs.at(index) + perturbation_type * params["epsilon"];
+
+            // Update the perturbations buffer
+            perturbationsBuffer.push_back(perturbation);
+        }
+    }
+    else
+    {
+        for (int perturbation_type = -1; perturbation_type <= 1; ++perturbation_type)
+        {
+            // Generate current perturbation
+            partial_perturbation->at(index) = coeffs.at(index) + perturbation_type * params["epsilon"];
+
+            // Generate all possible perturbations for the current index
+            generatePerturbations(partial_perturbation, index+1);
+        }
+    }
 }
 
 
@@ -192,7 +229,8 @@ float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
     return diveHandler_ptr->computeDiveAndRecoverTime(coeffs.at(0) + R.at(0), coeffs.at(1) + R.at(1));
 }
 
-/*TOTEST&COMMENT*/
+
+/* TOTEST&COMMENT */
 void DiveHandler::PGLearner::updateParams(std::list<float> rewards)
 {
     float reward_score = 0.0;
@@ -213,37 +251,77 @@ void DiveHandler::PGLearner::updateParams(std::list<float> rewards)
 #endif
 }
 
-/*TODO*/
+
+/* TOTEST&COMMENT */
 bool DiveHandler::PGLearner::updateCoeffs()
 {
     if( iter_count == MAX_ITER || converged() )
         return false;
     else
         {
+            // First generate the set of random perturbation for the current coefficients
             generatePerturbations();
 
-            // for each perturbation, evaluate it with the objective function and store the result in a temporary container
-            std::vector<float> evaluatedPerturbations;
-            for(unsigned int i=0; i<perturbationsBuffer.size(); ++i)
-            {
-    #ifdef DEBUG_MODE
-                SPQR_INFO("evaluation of the "<<i+1<<"th perturbation: " << evaluatePerturbation(perturbationsBuffer.at(i)) );
-    #endif
-                evaluatedPerturbations.push_back( evaluatePerturbation(perturbationsBuffer.at(i)) );
-            }
+            // For each perturbation, evaluate with the objective function and store the result in a temporary container
+            std::vector<float> evaluatedPerturbations (perturbationsBuffer.size());
+            PGbuffer::const_iterator evaluator;
+            for(evaluator = perturbationsBuffer.begin(); evaluator != perturbationsBuffer.end(); ++evaluator)
+                evaluatedPerturbations.push_back( evaluatePerturbation(*evaluator) );
 
+            // Compute the average 'gradient' for the current coefficients
             std::vector<float> coeffs_avgGradient(coeffs.size());
 
-            // for each parameter, compute the 3 Avg values and determine An
-            for( unsigned int n=0; n<coeffs.size(); ++n )
+#ifdef RAND_PERMUTATIONS
+            // For each coefficient, compute the average score to determine the correspondent 'gradient' entry
+            PGbuffer::const_iterator current_perturbation = perturbationsBuffer.begin();
+            for( unsigned int n = 0; n < coeffs.size(); ++n )
+            {
+                std::vector<float> score_plus, score_minus, score_zero;
+
+                // Keep track of the perturbation type and store each score in a container
+                for( unsigned int i = 0; i < evaluatedPerturbations.size(); ++i )
+                {
+                    if ( ((*current_perturbation).at(n) - coeffs.at(n)) > 0 )
+                        score_plus.push_back(evaluatedPerturbations.at(i));
+                    else if ( ((*current_perturbation).at(n) - coeffs.at(n)) < 0 )
+                        score_minus.push_back(evaluatedPerturbations.at(i));
+                    else
+                        score_zero.push_back(evaluatedPerturbations.at(i));
+
+                    ++current_perturbation;
+                }
+
+                // Sum up all positive perturbation scores
+                float avg_plus = 0.0;
+                for (unsigned int j = 0; j < score_plus.size(); ++j)
+                    avg_plus += score_plus.at(j) / score_plus.size();
+
+                // Sum up all negative perturbation scores
+                float avg_minus = 0.0;
+                for (unsigned int j = 0; j < score_minus.size(); ++j)
+                    avg_minus += score_minus.at(j) / score_minus.size();
+
+                // Sum up all null perturbation scores
+                float avg_zero = 0.0;
+                for (unsigned int j = 0; j < score_zero.size(); ++j)
+                    avg_zero += score_zero.at(j) / score_zero.size();
+
+                if( avg_zero <= avg_plus && avg_zero<= avg_minus )
+                    coeffs_avgGradient.at(n) = 0.0;
+                else
+                    coeffs_avgGradient.at(n) = avg_plus - avg_minus;
+            }
+#else
+            // For each coefficient, compute different averages to determine the correspondent 'gradient' entry
+            for( unsigned int n = 0; n < coeffs.size(); ++n )
             {
                 int avg_selector = 0;
                 float avg_minus = 0.0 , avg_zero = 0.0, avg_plus = 0.0;
-                for( unsigned int i=0; i<evaluatedPerturbations.size(); i+pow(3,n) )
+                for( unsigned int i = 0; i < evaluatedPerturbations.size(); i = i + pow(3,n) )
                 {
-                    for( unsigned int k=i; k<i+pow(3,n); ++k )
+                    for( unsigned int k = i; k < i + pow(3,n); ++k )
                     {
-                        float evaluation = evaluatedPerturbations.at(i+k)/3;
+                        float evaluation = evaluatedPerturbations.at(k) / (evaluatedPerturbations.size()/3);
 
                         if( (avg_selector)%3 == 0 ) avg_minus += evaluation;
                         if( (avg_selector)%3 == 1 ) avg_zero += evaluation;
@@ -251,25 +329,32 @@ bool DiveHandler::PGLearner::updateCoeffs()
                     }
                     ++avg_selector;
                 }
-
                 // evaluate An
                 if( avg_zero <= avg_plus && avg_zero<= avg_minus )
                     coeffs_avgGradient.at(coeffs.size() - (n +1)) = 0.0;
                 else
                     coeffs_avgGradient.at(coeffs.size() - (n +1)) = avg_plus - avg_minus;
             }
+#endif
 
-            /*TODO: update coeffsBuffer (coeffsBuffer must be a list)*/
-            /*TODO: random perturbation case*/
+#ifdef DEBUG_MODE
+            SPQR_INFO("Computed policy gradient: [ " << coeffs_avgGradient.at(0)/magnitude(coeffs_avgGradient)
+                      << ", " << coeffs_avgGradient.at(1)/magnitude(coeffs_avgGradient) << " ]");
+#endif
 
-            // update the coeffs with -(A/abs(A))*ETA where A is the n dimensional vector of Ans
+            // Update coefficients history
+            coeffsBuffer.push_front(coeffs);
+            // Crop buffer
+            if (coeffsBuffer.size() > BUFFER_DIM)
+                coeffsBuffer.resize(BUFFER_DIM);
+
+            // Update the coefficients following the gradient direction
             for( unsigned int i=0; i<coeffs_avgGradient.size(); ++i )
                 coeffs.at(i) += - (coeffs_avgGradient.at(i)/magnitude(coeffs_avgGradient)) * ETA;
 
             ++iter_count;
 
             return true;
-        }
     }
 }
 
@@ -399,9 +484,7 @@ void DiveHandler::estimateDiveTimes()
     tBackInPose = tRecover + tReposition;
 }
 
-/*
- * TOCOMMENT
- */
+/* TOCOMMENT */
 inline float DiveHandler::computeDiveAndRecoverTime(float alpha1, float alpha2)
 {
     return alpha2*( alpha1*tBall2Goal - tDive ) + tBackInPose;

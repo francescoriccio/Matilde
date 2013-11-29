@@ -126,7 +126,7 @@ class DiveHandler : public DiveHandlerBase
     // Inner class modeling a PolicyGradient-based learning agent
     class PGLearner : public CoeffsLearner
     {
-        typedef std::vector< std::vector<float> > PGbuffer;
+        typedef std::list< std::vector<float> > PGbuffer;
 
         private:
 
@@ -137,6 +137,9 @@ class DiveHandler : public DiveHandlerBase
 
         // Check for convergence of the algorithm
         bool converged();
+
+        // Recursive perturbation generator
+        void generatePerturbations(std::vector<float>* partial_perturbation, unsigned int index);
 
         public:
 
