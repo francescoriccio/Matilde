@@ -21,7 +21,7 @@
 #include "DiveHandler.h"
 
 // Uncomment to have debug information
-//#define DEBUG_MODE
+#define DEBUG_MODE
 //#define RAND_PERMUTATIONS
 
 #define NEGATIVE_REWARD -1.0
@@ -31,6 +31,8 @@
 #define SPQR_ERR(x) std::cerr << "\033[22;31;1m" <<"[DiveHandler] " << x << "\033[0m"<< std::endl;
 #define SPQR_INFO(x) std::cerr << "\033[22;34;1m" <<"[DiveHandler] " << x << "\033[0m" << std::endl;
 #define SPQR_SUCCESS(x) std::cerr << "\033[0;32;1m" <<"[DiveHandler] " << x << "\033[0m" << std::endl;
+#define SPQR_FAILURE(x) std::cerr << "\033[22;31;1m" <<"[DiveHandler] " << x << "\033[0m"<< std::endl;
+
 
 MAKE_MODULE(DiveHandler, SPQR-Modules)
 
@@ -369,8 +371,9 @@ bool DiveHandler::PGLearner::updateCoeffs()
  * Default class constructor: initializes all parameters and generates the learning agent.
  */
 DiveHandler::DiveHandler():
-    diveType(none), learner(new PGLearner(this, 2, EPSILON, T, 1.0, true)), opponentScore(0),
-    tBall2Goal(SPQR::FIELD_DIMENSION_Y), tDive(0.0), tBackInPose(0.0)
+    diveType(none), state(static_cast<DiveHandler::LearningState>(SPQR::GOALIE_LEARNING_STATE)),
+    learner(new PGLearner(this, 2, EPSILON, T, 1.0, true)), opponentScore(0), tBall2Goal(SPQR::FIELD_DIMENSION_Y),
+    tDive(0.0), tBackInPose(0.0)
 {
 #ifdef DEBUG_MODE
     SPQR_INFO("Initializing PGlearner...");
@@ -502,7 +505,7 @@ inline float DiveHandler::computeDiveAndRecoverTime(float alpha1, float alpha2)
     return alpha2*( alpha1*tBall2Goal - tDive ) + tBackInPose;
 }
 
-/* TODO */
+/* TOTEST&COMMENT */
 /*
  * The module update function.
  * At each time step, the goalie enables the DiveHandler if the ball is close enough.
@@ -565,6 +568,9 @@ void DiveHandler::update(DiveHandle& diveHandle)
 
                         //update opponent score
                         opponentScore = (int)theOpponentTeamInfo.score;
+#ifdef DEBUG_MODE
+                        SPQR_FAILURE("The opponent team scored! Negative reward for the learner. ");
+#endif
                     }
                     // if the goalie succeeds
                     else
@@ -572,6 +578,9 @@ void DiveHandler::update(DiveHandle& diveHandle)
                         rewardHistory.push_front(POSITIVE_REWARD);
                         if (rewardHistory.size() > REWARDS_HISTORY_SIZE)
                             rewardHistory.resize(REWARDS_HISTORY_SIZE);
+#ifdef DEBUG_MODE
+                        SPQR_SUCCESS("The goalie has succeeded! Positive reward for the learner.  ");
+#endif
                     }
 
                     state = learning;
@@ -595,9 +604,14 @@ void DiveHandler::update(DiveHandle& diveHandle)
                 diveHandle.diveTime = -1.0;
 
 #ifdef DEBUG_MODE
-            if (diveHandle.diveTime > 0.0) SPQR_INFO("Dive in " << diveHandle.diveTime << " ms! ");
-            if (diveHandle.diveTime < SPQR::GOALIE_DIVE_TIME_TOLERANCE) SPQR_INFO("Dive now! ");
-            else SPQR_INFO("Stay still... ");
+            if (diveTime > 0.0)
+            {
+                SPQR_INFO("Suggested dive in " << diveHandle.diveTime << " ms! ");
+                if (diveHandle.diveTime < SPQR::GOALIE_DIVE_TIME_TOLERANCE)
+                    SPQR_INFO("Dive now! ");
+            }
+            else
+                SPQR_INFO("Stay still... ");
 #endif
 
         }

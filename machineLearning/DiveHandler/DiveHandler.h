@@ -89,6 +89,7 @@ class DiveHandler : public DiveHandlerBase
         lcloseDive,
         // Close dive on the right
         rcloseDive,
+        // Stop the ball without diving
         stopBall
     };
 
@@ -181,7 +182,7 @@ private:
 
     // Obtained rewards
     std::list<float> rewardHistory;
-    // opponent team current score
+    // Opponent team current score
     int opponentScore;
 
     // Estimated time the ball needs to reach the goal
