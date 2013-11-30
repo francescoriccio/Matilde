@@ -54,6 +54,7 @@ END_MODULE
 // PG parameters
 #define GAMMA 0.5
 #define BUFFER_DIM 10
+#define REWARDS_HISTORY_SIZE 15
 #define ETA 1
 #define EPSILON 0.15
 #define T 15
@@ -180,6 +181,8 @@ private:
 
     // Obtained rewards
     std::list<float> rewardHistory;
+    // opponent team current score
+    int opponentScore;
 
     // Estimated time the ball needs to reach the goal
     // a.k.a. Tpapo (historical reasons)

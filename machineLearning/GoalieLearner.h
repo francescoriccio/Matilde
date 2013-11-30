@@ -165,7 +165,7 @@ public:
                                 cerr << "\033[0;32;1m\t[Goalie] DiveHandle::diveTimer: " << theDiveHandle.diveTime << " \033[0m" << endl;
                             }
 #endif
-                            if( theDiveHandle.diveTime != -1 && theDiveHandle.diveTime < 100 ) // best timing provided by the diveHandler
+                            if( theDiveHandle.diveTime != -1 && theDiveHandle.diveTime < SPQR::GOALIE_DIVE_TIME_TOLERANCE ) // best timing provided by the diveHandler
                             {
 #ifdef GOALIE_DEBUG_MODE
                                 cerr << "\033[0;31;1m\t[Goalie] Dive! \033[0m" << endl;

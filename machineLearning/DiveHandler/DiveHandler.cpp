@@ -24,6 +24,9 @@
 //#define DEBUG_MODE
 //#define RAND_PERMUTATIONS
 
+#define NEGATIVE_REWARD -1.0
+#define POSITIVE_REWARD 1.0
+
 // Debug messages template
 #define SPQR_ERR(x) std::cerr << "\033[22;31;1m" <<"[DiveHandler] " << x << "\033[0m"<< std::endl;
 #define SPQR_INFO(x) std::cerr << "\033[22;34;1m" <<"[DiveHandler] " << x << "\033[0m" << std::endl;
@@ -366,7 +369,7 @@ bool DiveHandler::PGLearner::updateCoeffs()
  * Default class constructor: initializes all parameters and generates the learning agent.
  */
 DiveHandler::DiveHandler():
-    diveType(none), learner(new PGLearner(this, 2, EPSILON, T, 1.0, true)),
+    diveType(none), learner(new PGLearner(this, 2, EPSILON, T, 1.0, true)), opponentScore(0),
     tBall2Goal(SPQR::FIELD_DIMENSION_Y), tDive(0.0), tBackInPose(0.0)
 {
 #ifdef DEBUG_MODE
@@ -539,17 +542,40 @@ void DiveHandler::update(DiveHandle& diveHandle)
             if( state == learning )
             {
                 // Perform a single iteration of the learning algorithm
-                learner->updateCoeffs();
+                if( learner->updateCoeffs() )
+                    // Change the state in 'waiting for reward'
+                    state = waitReward;
+                else
+                    // the algorithm converged
+                    state = notLearning;
 
-                // Change the state in 'waiting for reward'
-                state = waitReward;
             }
             // The module is in the learning state, waiting for the next reward
             else if( state == waitReward )
             {
-                // polling for reward
+                if(diveHandle.diveTime < SPQR::GOALIE_DIVE_TIME_TOLERANCE) //TODO: check timing according to theOpponentTeamInfo.score
+                {
+                    // polling for reward
+                    // if the opponent team scored
+                    if(opponentScore != (int)theOpponentTeamInfo.score)
+                    {
+                        rewardHistory.push_front(NEGATIVE_REWARD);
+                        if (rewardHistory.size() > REWARDS_HISTORY_SIZE)
+                            rewardHistory.resize(REWARDS_HISTORY_SIZE);
 
-                // if reward -> state = learning
+                        //update opponent score
+                        opponentScore = (int)theOpponentTeamInfo.score;
+                    }
+                    // if the goalie succeeds
+                    else
+                    {
+                        rewardHistory.push_front(POSITIVE_REWARD);
+                        if (rewardHistory.size() > REWARDS_HISTORY_SIZE)
+                            rewardHistory.resize(REWARDS_HISTORY_SIZE);
+                    }
+
+                    state = learning;
+                }
             }
 
             // Use the reward to adjust the algorithm parameters
@@ -563,14 +589,14 @@ void DiveHandler::update(DiveHandle& diveHandle)
             // Compute the dive time using the current coefficients as T = alpha2 * (alpha1*T_PAPO - T_dive)
             float diveTime = (learner->getCoeffs()).at(1) * ( (learner->getCoeffs()).at(0) * tBall2Goal - tDive );
             // Update the DiveHandle
-            if (diveTime >= 0)
+            if (diveTime > 0.0)
                 diveHandle.diveTime = diveTime;
             else
                 diveHandle.diveTime = -1.0;
 
 #ifdef DEBUG_MODE
-            if (diveHandle.diveTime > 0) SPQR_INFO("Dive in " << diveHandle.diveTime << " ms! ");
-            else if (diveHandle.diveTime == 0) SPQR_INFO("Dive now! ");
+            if (diveHandle.diveTime > 0.0) SPQR_INFO("Dive in " << diveHandle.diveTime << " ms! ");
+            if (diveHandle.diveTime < SPQR::GOALIE_DIVE_TIME_TOLERANCE) SPQR_INFO("Dive now! ");
             else SPQR_INFO("Stay still... ");
 #endif
 
