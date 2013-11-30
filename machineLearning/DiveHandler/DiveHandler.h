@@ -38,7 +38,7 @@
 
 
 MODULE(DiveHandler)
-        REQUIRES(OwnTeamInfo)
+    REQUIRES(OpponentTeamInfo)
 	REQUIRES(RobotInfo)
 	REQUIRES(RobotPoseSpqrFiltered)
 	REQUIRES(BallModel)
@@ -87,7 +87,8 @@ class DiveHandler : public DiveHandlerBase
         // Close dive on the left
         lcloseDive,
         // Close dive on the right
-        rcloseDive
+        rcloseDive,
+        stopBall
     };
 
     // Inner base class modeling the learning agent

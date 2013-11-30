@@ -428,6 +428,8 @@ void DiveHandler::estimateBallProjection()
         else if( yIntercept < -SPQR::GOALIE_FAR_LIMIT_Y )
             // Far intercept on the right
             diveType = rDive;
+        else if( fabs(yIntercept) < SPQR::GOALIE_CLOSE_LIMIT_Y/2)
+            diveType = stopBall;
         else
             // Any other case: no dive at all
             diveType = none;
@@ -438,6 +440,8 @@ void DiveHandler::estimateBallProjection()
         tDive = SPQR::GOALIE_DIVE_TIME;
     else if (diveType == lcloseDive || diveType == rcloseDive )
         tDive = SPQR::GOALIE_CLOSE_DIVE_TIME;
+    else if (diveType == stopBall )
+        tDive = SPQR::GOALIE_STOP_BALL_TIME;
     else
         tDive = 0.0;
 
@@ -479,6 +483,11 @@ void DiveHandler::estimateDiveTimes()
         tRecover = SPQR::GOALIE_DIVE_RECOVER_TIME;
         tReposition = SPQR::GOALIE_DIVE_REPOSITION_TIME;
     }
+    else if( diveType == stopBall )
+    {
+        // stop ball: the robot has to stand up and stop the ball
+        tRecover = SPQR::GOALIE_STOP_BALL_RECOVER_TIME;
+    }
 
     // Total time needed to recover the original position
     tBackInPose = tRecover + tReposition;
@@ -505,6 +514,7 @@ inline float DiveHandler::computeDiveAndRecoverTime(float alpha1, float alpha2)
  */
 void DiveHandler::update(DiveHandle& diveHandle)
 {
+//    theOpponentTeamInfo.score;
     // Check you're actually the goalie...
     if (theRobotInfo.number == 1)
     {
@@ -559,12 +569,9 @@ void DiveHandler::update(DiveHandle& diveHandle)
                 diveHandle.diveTime = -1.0;
 
 #ifdef DEBUG_MODE
-            if (diveHandle.diveTime > 0)
-            {SPQR_INFO("Dive in " << diveHandle.diveTime << " ms! ");}
-            else if (diveHandle.diveTime == 0)
-            {SPQR_INFO("Dive now! ");}
-            else
-            {SPQR_INFO("Stay still... ");}
+            if (diveHandle.diveTime > 0) SPQR_INFO("Dive in " << diveHandle.diveTime << " ms! ");
+            else if (diveHandle.diveTime == 0) SPQR_INFO("Dive now! ");
+            else SPQR_INFO("Stay still... ");
 #endif
 
         }

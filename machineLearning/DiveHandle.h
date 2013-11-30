@@ -9,14 +9,14 @@ private:
 		* @param in  streaming in ...
 		* @param out ... streaming out.
 	*/
-	void serialize(In* in, Out* out)
-	{
-		STREAM_REGISTER_BEGIN;
-                STREAM(diveTime);
-		STREAM(ballProjectionEstimate);
-		STREAM(diveType);
-		STREAM_REGISTER_FINISH;
-	}
+    void serialize(In* in, Out* out)
+    {
+        STREAM_REGISTER_BEGIN;
+        STREAM(diveTime);
+        STREAM(ballProjectionEstimate);
+        STREAM(diveType);
+        STREAM_REGISTER_FINISH;
+    }
 
 public:
 	enum Dive
@@ -25,7 +25,8 @@ public:
 		lDive, 
 		rDive, 
 		lcloseDive, 
-		rcloseDive
+        rcloseDive,
+        stopBall
 	};
 	
 	typedef int Dive;

@@ -10,7 +10,8 @@ enum Dive
     lDive,
     rDive,
     lcloseDive,
-    rcloseDive
+    rcloseDive,
+    stopBall
 };
 
 option GoalieLearner
@@ -164,7 +165,7 @@ public:
                                 cerr << "\033[0;32;1m\t[Goalie] DiveHandle::diveTimer: " << theDiveHandle.diveTime << " \033[0m" << endl;
                             }
 #endif
-                            if( theDiveHandle.diveTime == 0.0 ) // best timing provided by the diveHandler
+                            if( theDiveHandle.diveTime != -1 && theDiveHandle.diveTime < 100 ) // best timing provided by the diveHandler
                             {
 #ifdef GOALIE_DEBUG_MODE
                                 cerr << "\033[0;31;1m\t[Goalie] Dive! \033[0m" << endl;
@@ -174,10 +175,10 @@ public:
 
                                 else if(theDiveHandle.diveType == lcloseDive) return dive_left;
                                 else if(theDiveHandle.diveType == rcloseDive) return dive_right;
+                                else if(theDiveHandle.diveType == stopBall) return stop_ball;
 
 //                                else if(theDiveHandle.diveType == lcloseDive) return close_dive_left;
 //                                else if(theDiveHandle.diveType == rcloseDive) return close_dive_right;
-                                else return stop_ball; // or nothing erasing this line
                             }
                         }
                     }
