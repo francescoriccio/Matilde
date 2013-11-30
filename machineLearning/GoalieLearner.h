@@ -43,12 +43,20 @@ private:
 
     inline bool ballIsInRange(bool withError = false)
     {
-        float deltaX = convertRel2Glob(theBallModel.estimate.position.x, theBallModel.estimate.position.y).x - GOALIE_BASE_POSITION_X;
-        float deltaY = convertRel2Glob(theBallModel.estimate.position.x, theBallModel.estimate.position.y).y - GOALIE_BASE_POSITION_Y;
-        if (withError)
-            return sqrt(deltaX * deltaX + deltaY * deltaY) < SPQR::GOALIE_MAX_DIST_BALL_IN_RANGE_ABS + SPQR::GOALIE_POSE_X_TOLLERANCE;
+//        float deltaX = convertRel2Glob(theBallModel.estimate.position.x, theBallModel.estimate.position.y).x - GOALIE_BASE_POSITION_X;
+//        float deltaY = convertRel2Glob(theBallModel.estimate.position.x, theBallModel.estimate.position.y).y - GOALIE_BASE_POSITION_Y;
+        float deltaX = theBallModel.estimate.position.x;
+        float deltaY = theBallModel.estimate.position.y;
+
+        // if too far from own goal
+        if( theRobotPoseSpqrFiltered.x > -SPQR::FIELD_DIMENSION_X*0.5 ) return false;
         else
-            return sqrt(deltaX * deltaX + deltaY * deltaY) < SPQR::GOALIE_MAX_DIST_BALL_IN_RANGE_ABS;
+        {
+            if (withError)
+                return sqrt(deltaX * deltaX + deltaY * deltaY) < SPQR::GOALIE_MAX_DIST_BALL_IN_RANGE_ABS + SPQR::GOALIE_POSE_X_TOLLERANCE;
+            else
+                return sqrt(deltaX * deltaX + deltaY * deltaY) < SPQR::GOALIE_MAX_DIST_BALL_IN_RANGE_ABS;
+        }
     }
 
     inline bool ballIsSeen()
@@ -133,7 +141,7 @@ public:
 #endif      
 
             if( ballIsInRange(false) && theBallModel.estimate.velocity.abs() < SPQR::GOALIE_MOVING_BALL_MIN_VELOCITY ) return  kick_ball_away;
-            else if( !isGoalieReady() ) return goTo_golie_position;
+            else if( !isGoalieReady() ) return goTo_goalie_position;
 
             else if(ballIsSeen())
             {
@@ -191,7 +199,7 @@ public:
 #ifdef GOALIE_DEBUG_MODE
             stateName = "dive_left";
 #endif
-            if( stateTime > SPQR::GOALIE_DIVE_TIME )return goTo_golie_position;
+            if( stateTime > SPQR::GOALIE_DIVE_TIME )return goTo_goalie_position;
         }
         action
         {
@@ -207,7 +215,7 @@ public:
 #ifdef GOALIE_DEBUG_MODE
             stateName = "dive_right";
 #endif
-            if( stateTime > SPQR::GOALIE_DIVE_TIME ) return goTo_golie_position;
+            if( stateTime > SPQR::GOALIE_DIVE_TIME ) return goTo_goalie_position;
         }
         action
         {
@@ -239,7 +247,7 @@ public:
 #ifdef GOALIE_DEBUG_MODE
             stateName = "kick_ball_away";
 #endif
-            if( !ballIsInRange(true) || !ballIsSeen() ) return goTo_golie_position;
+            if( !ballIsInRange(true) || !ballIsSeen() ) return goTo_goalie_position;
         }
 
         action
@@ -249,17 +257,17 @@ public:
         }
     }
 
-    state goTo_golie_position()
+    state goTo_goalie_position()
     {
         decision
         {
 #ifdef GOALIE_DEBUG_MODE
-            stateName = "goTo_golie_position";
+            stateName = "goTo_goalie_position";
 #endif
             if( ballIsInRange() ) return kick_ball_away;
 
-            if( isGoalieReady() ) return main_loop;
-            else if( isPositioned() ) return turnTo_opponent_goal;
+            if( isPositioned() ) return turnTo_opponent_goal;
+            else if( isGoalieReady() ) return main_loop;
         }
         action
         {
