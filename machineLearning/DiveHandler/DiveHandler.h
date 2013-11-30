@@ -25,7 +25,7 @@
 
 #include "Tools/Module/Module.h"
 #include "Representations/Modeling/BallModel.h"
-#include <Representations/Infrastructure/GameInfo.h>
+#include <Representations/Infrastructure/TeamInfo.h>
 #include <Representations/Infrastructure/RobotInfo.h>
 #include <Representations/SPQR-Representations/ConfigurationParameters.h>
 #include "Representations/SPQR-Representations/RobotPoseSpqrFiltered.h"
@@ -38,7 +38,7 @@
 
 
 MODULE(DiveHandler)
-	REQUIRES(GameInfo)
+        REQUIRES(OwnTeamInfo)
 	REQUIRES(RobotInfo)
 	REQUIRES(RobotPoseSpqrFiltered)
 	REQUIRES(BallModel)
@@ -55,7 +55,7 @@ END_MODULE
 #define GAMMA 0.5
 #define BUFFER_DIM 10
 #define ETA 1
-#define EPSILON 0.5
+#define EPSILON 0.15
 #define T 15
 
 
@@ -121,6 +121,9 @@ class DiveHandler : public DiveHandlerBase
         // Update coefficients performing a step of the learning algorithm
         virtual bool updateCoeffs() = 0;
 
+        // Use the obtained rewards to adjust the algorithm parameters
+        virtual void updateParams(const std::list<float>& rewards) = 0;
+
     };
 
     // Inner class modeling a PolicyGradient-based learning agent
@@ -154,7 +157,7 @@ class DiveHandler : public DiveHandlerBase
         float evaluatePerturbation( std::vector<float> R );
 
         // Update the PG parameters according to the obtained rewards
-        void updateParams(std::list<float> rewards);
+        void updateParams(const std::list<float>& rewards);
 
         // Update coefficients performing a step of the learning algorithm
         virtual bool updateCoeffs();
@@ -174,8 +177,12 @@ private:
     // Learning agent
     CoeffsLearner* learner;
 
+    // Obtained rewards
+    std::list<float> rewardHistory;
+
     // Estimated time the ball needs to reach the goal
-    float tBall2Goal; // a.k.a. Tpapo (historical reasons)
+    // a.k.a. Tpapo (historical reasons)
+    float tBall2Goal;
     // Estimated time needed for the current dive action to be performed
     float tDive;
     // Estimated time the goalie needs to back up to its original position

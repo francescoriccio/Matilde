@@ -21,7 +21,7 @@
 #include "DiveHandler.h"
 
 // Uncomment to have debug information
-#define DEBUG_MODE
+//#define DEBUG_MODE
 //#define RAND_PERMUTATIONS
 
 // Debug messages template
@@ -231,7 +231,7 @@ float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
 
 
 /* TOTEST&COMMENT */
-void DiveHandler::PGLearner::updateParams(std::list<float> rewards)
+void DiveHandler::PGLearner::updateParams(const std::list<float>& rewards)
 {
     float reward_score = 0.0;
     int discount_exp = 0;
@@ -528,9 +528,11 @@ void DiveHandler::update(DiveHandle& diveHandle)
             // The module is in the learning state and a reward has been received
             if( state == learning )
             {
-                // iterazione while PG
+                // Perform a single iteration of the learning algorithm
+                learner->updateCoeffs();
 
-                // state = waitReward;
+                // Change the state in 'waiting for reward'
+                state = waitReward;
             }
             // The module is in the learning state, waiting for the next reward
             else if( state == waitReward )
@@ -542,9 +544,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
 
             // Use the reward to adjust the algorithm parameters
             if( state == learning )
-            {
-                // adjust PG parameters wrt reward
-            }
+                learner->updateParams(rewardHistory);
 
 #ifdef DEBUG_MODE
             SPQR_INFO( "Estimated overall time to dive and recover position: " <<
