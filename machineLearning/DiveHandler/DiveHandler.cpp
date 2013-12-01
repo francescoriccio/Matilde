@@ -34,6 +34,11 @@
 #define SPQR_SUCCESS(x) std::cerr << "\033[0;32;1m" <<"[DiveHandler] " << x << "\033[0m" << std::endl;
 #define SPQR_FAILURE(x) std::cerr << "\033[22;31;1m" <<"[DiveHandler] " << x << "\033[0m"<< std::endl;
 
+#define LEARNING_STATE(x) \
+    if(x == 1) std::cerr << "\033[22;34;1m"<<"Learner state: not learning"<<"\033[0m" << std::endl; \
+    else if(x == 2) std::cerr << "\033[22;34;1m"<<"Learner state: paused (waiting for reward)"<<"\033[0m" << std::endl; \
+    else if(x == 3) std::cerr << "\033[22;34;1m"<<"Learner state: active"<<"\033[0m" << std::endl; \
+
 
 MAKE_MODULE(DiveHandler, SPQR-Modules)
 
@@ -382,7 +387,7 @@ bool DiveHandler::PGLearner::updateCoeffs()
  */
 DiveHandler::DiveHandler():
     diveType(none), state(static_cast<DiveHandler::LearningState>(SPQR::GOALIE_LEARNING_STATE)),
-    learner(new PGLearner(this, 2, EPSILON, T, 1.0, true)), opponentScore(0), tBall2Goal(SPQR::FIELD_DIMENSION_Y),
+    learner(new PGLearner(this, 2, EPSILON, T, 1.0, true)), opponentScore(0), dived(false), tBall2Goal(SPQR::FIELD_DIMENSION_Y),
     tDive(0.0), tBackInPose(0.0), ballProjectionIntercept(SPQR::FIELD_DIMENSION_Y), distanceBall2Goal(SPQR::FIELD_DIMENSION_X)
 {
 #ifdef DIVEHANDLER_TRAINING
@@ -548,17 +553,18 @@ void DiveHandler::update(DiveHandle& diveHandle)
             SPQR_INFO("PAPO time: " << tBall2Goal);
             SPQR_INFO("Dive time: " << tDive);
             SPQR_INFO("Back-in-position time: " << tBackInPose);
+            LEARNING_STATE( (int)state );
 #endif
             // The module is in the learning state and a reward has been received
             if( state == learning )
             {
-#ifdef DIVEHANDLER_TRAINING
-                SPQR_INFO("Learner state: enabled.");
-#endif
                 // Perform a single iteration of the learning algorithm
                 if( learner->updateCoeffs() )
+                {
                     // Change the state in 'waiting for reward'
                     state = waitReward;
+                    diveHandle.rewardAck = false;
+                }
                 else
                     // The algorithm has converged: turning off learning
                     state = notLearning;
@@ -567,9 +573,6 @@ void DiveHandler::update(DiveHandle& diveHandle)
             // The module is in the learning state, waiting for the next reward
             else if( state == waitReward )
             {
-#ifdef DIVEHANDLER_TRAINING
-                SPQR_INFO("Learner state: paused (waiting for reward).");
-#endif
                 // The opponent team scores
                 if(opponentScore != (int)theOpponentTeamInfo.score)
                 {
@@ -584,9 +587,48 @@ void DiveHandler::update(DiveHandle& diveHandle)
 #endif
                     // A reward has been received: re-enable learning
                     state = learning;
+                    diveHandle.rewardAck = true;
                 }
                 // The goalie does something and the score doesn't change (i.e. successful save)
-//                else if( (diveHandle.diveTime >= 0.0) && (diveHandle.diveTime < SPQR::GOALIE_DIVE_TIME_TOLERANCE))
+                else if( (diveHandle.diveTime >= 0.0) && (diveHandle.diveTime < SPQR::GOALIE_DIVE_TIME_TOLERANCE)
+                         && !dived)
+                {
+                    dived = true;
+                }
+                else if((theFrameInfo.time - theBallModel.timeWhenLastSeen) < 4000 && dived)
+                {
+                    if( theGlobalBallEstimation.singleRobotX > -SPQR::FIELD_DIMENSION_X )
+                    {
+                        rewardHistory.push_front(POSITIVE_REWARD);
+                        if (rewardHistory.size() > REWARDS_HISTORY_SIZE)
+                            rewardHistory.resize(REWARDS_HISTORY_SIZE);
+#ifdef DIVEHANDLER_TRAINING
+                        SPQR_SUCCESS("The goalie has succeeded! Positive reward for the learner.  ");
+#endif
+                        // A reward has been received: re-enable learning
+                        state = learning;
+                        diveHandle.rewardAck = true;
+                    }
+                    else
+                    {
+                        rewardHistory.push_front(NEGATIVE_REWARD);
+                        if (rewardHistory.size() > REWARDS_HISTORY_SIZE)
+                            rewardHistory.resize(REWARDS_HISTORY_SIZE);
+
+                        ++opponentScore;
+#ifdef DIVEHANDLER_TRAINING
+                        SPQR_FAILURE("The opponent team scored! Negative reward for the learner. ");
+#endif
+                        state = learning;
+                        diveHandle.rewardAck = true;
+                    }
+
+
+                }
+
+
+                // The goalie does nothing but the opponent team fails to score
+//                else if ( (theBallModel.estimate.velocity.x > 500.0) && (distanceBall2Goal < 300.0) )
 //                {
 //                    rewardHistory.push_front(POSITIVE_REWARD);
 //                    if (rewardHistory.size() > REWARDS_HISTORY_SIZE)
@@ -596,24 +638,9 @@ void DiveHandler::update(DiveHandle& diveHandle)
 //#endif
 //                    // A reward has been received: re-enable learning
 //                    state = learning;
+//                    diveHandle.rewardAck = true;
 //                }
-                // The goalie does nothing but the opponent team fails to score
-                else if ( (theBallModel.estimate.velocity.x > 500.0) && (distanceBall2Goal < 300.0) )
-                {
-                    rewardHistory.push_front(POSITIVE_REWARD);
-                    if (rewardHistory.size() > REWARDS_HISTORY_SIZE)
-                        rewardHistory.resize(REWARDS_HISTORY_SIZE);
-#ifdef DIVEHANDLER_TRAINING
-                    SPQR_SUCCESS("The goalie has succeeded! Positive reward for the learner.  ");
-#endif
-                    // A reward has been received: re-enable learning
-                    state = learning;
-                }
             }
-#ifdef DIVEHANDLER_TRAINING
-            else
-                SPQR_INFO("Learner state: disabled.");
-#endif
 
             // Use the reward to adjust the algorithm parameters
             if( state == learning )

@@ -15,6 +15,7 @@ private:
         STREAM(diveTime);
         STREAM(ballProjectionEstimate);
         STREAM(diveType);
+        STREAM(rewardAck);
         STREAM_REGISTER_FINISH;
     }
 
@@ -31,10 +32,13 @@ public:
 	
 	typedef int Dive;
 	
-        float diveTime;
-		float ballProjectionEstimate;
-		Dive diveType;
-	
-	/** Constructor */
-        DiveHandle() : diveTime(-1.0), ballProjectionEstimate(0.0), diveType(none) {;}
+    float diveTime;
+    float ballProjectionEstimate;
+    Dive diveType;
+
+    bool rewardAck;
+
+    /** Constructor */
+    DiveHandle() : diveTime(-1.0), ballProjectionEstimate(0.0),
+        diveType(none),rewardAck(false) {;}
 };

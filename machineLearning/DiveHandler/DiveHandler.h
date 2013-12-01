@@ -26,6 +26,7 @@
 #include "Tools/Module/Module.h"
 #include "Representations/Modeling/BallModel.h"
 #include "Representations/Infrastructure/TeamInfo.h"
+#include "Representations/Infrastructure/FrameInfo.h"
 #include "Representations/Infrastructure/RobotInfo.h"
 #include "Representations/SPQR-Representations/ConfigurationParameters.h"
 #include "Representations/SPQR-Representations/RobotPoseSpqrFiltered.h"
@@ -38,12 +39,13 @@
 
 
 MODULE(DiveHandler)
-        REQUIRES(OpponentTeamInfo)
-	REQUIRES(RobotInfo)
-	REQUIRES(RobotPoseSpqrFiltered)
-	REQUIRES(BallModel)
-	REQUIRES(GlobalBallEstimation)
-	PROVIDES(DiveHandle)
+    REQUIRES(OpponentTeamInfo)
+    REQUIRES(FrameInfo)
+    REQUIRES(RobotInfo)
+    REQUIRES(RobotPoseSpqrFiltered)
+    REQUIRES(BallModel)
+    REQUIRES(GlobalBallEstimation)
+    PROVIDES(DiveHandle)
 END_MODULE
 
 
@@ -184,6 +186,8 @@ private:
     std::list<float> rewardHistory;
     // Opponent team current score
     int opponentScore;
+
+    bool dived;
 
     // Estimated time the ball needs to reach the goal
     // a.k.a. Tpapo (historical reasons)

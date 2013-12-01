@@ -4,17 +4,7 @@
 // Uncomment if you want to have debug information
 #define GOALIE_DEBUG_MODE
 
-enum Dive
-{
-    none = 1,
-    lDive,
-    rDive,
-    lcloseDive,
-    rcloseDive,
-    stopBall
-};
-
-option GoalieLearner
+option GoalieLearningBeahavior
 {
 private:
 
@@ -93,7 +83,8 @@ private:
         lDive,
         rDive,
         lcloseDive,
-        rcloseDive
+        rcloseDive,
+        stopBall
     };
 
 public:
@@ -141,10 +132,10 @@ public:
             stateName = "main_loop";
 #endif      
 
-            if( ballIsInRange(false) && theBallModel.estimate.velocity.abs() < SPQR::GOALIE_MOVING_BALL_MIN_VELOCITY ) return  kick_ball_away;
-            else if( !isGoalieReady() ) return goTo_goalie_position;
+//            if( ballIsInRange(true) && theBallModel.estimate.velocity.abs() < SPQR::GOALIE_MOVING_BALL_MIN_VELOCITY ) return kick_ball_away;
+            if( !isGoalieReady() ) return goTo_goalie_position;
 
-            else if(ballIsSeen())
+            else if(ballIsSeen() && theDiveHandle.rewardAck)
             {
                 //if ball is moving fast enought
                 if(theBallModel.estimate.velocity.abs() >= SPQR::GOALIE_MOVING_BALL_MIN_VELOCITY)
@@ -175,10 +166,10 @@ public:
 
                                 else if(theDiveHandle.diveType == lcloseDive) return dive_left;
                                 else if(theDiveHandle.diveType == rcloseDive) return dive_right;
-                                else if(theDiveHandle.diveType == stopBall) return stop_ball;
-
 //                                else if(theDiveHandle.diveType == lcloseDive) return close_dive_left;
 //                                else if(theDiveHandle.diveType == rcloseDive) return close_dive_right;
+
+                                else if(theDiveHandle.diveType == stopBall) return stop_ball;
                             }
                         }
                     }
@@ -200,7 +191,7 @@ public:
 #ifdef GOALIE_DEBUG_MODE
             stateName = "dive_left";
 #endif
-            if( stateTime > SPQR::GOALIE_DIVE_TIME )return goTo_goalie_position;
+            if( stateTime > SPQR::GOALIE_DIVE_TIME ) return search_ball;
         }
         action
         {
@@ -216,7 +207,7 @@ public:
 #ifdef GOALIE_DEBUG_MODE
             stateName = "dive_right";
 #endif
-            if( stateTime > SPQR::GOALIE_DIVE_TIME ) return goTo_goalie_position;
+            if( stateTime > SPQR::GOALIE_DIVE_TIME ) return search_ball;
         }
         action
         {
@@ -232,28 +223,11 @@ public:
 #ifdef GOALIE_DEBUG_MODE
             stateName = "stop_ball";
 #endif
-            if( stateTime > SPQR::GOALIE_DIVE_TIME ) return main_loop;
+            if( stateTime > SPQR::GOALIE_DIVE_TIME ) return search_ball;
         }
         action
         {
             StopBall();
-            LookAtBall();
-        }
-    }
-
-    state kick_ball_away(){
-
-        decision
-        {
-#ifdef GOALIE_DEBUG_MODE
-            stateName = "kick_ball_away";
-#endif
-            if( !ballIsInRange(true) || !ballIsSeen() ) return goTo_goalie_position;
-        }
-
-        action
-        {
-            GoalieKickAway();
             LookAtBall();
         }
     }
@@ -265,7 +239,7 @@ public:
 #ifdef GOALIE_DEBUG_MODE
             stateName = "goTo_goalie_position";
 #endif
-            if( ballIsInRange() ) return kick_ball_away;
+//            if( ballIsInRange() ) return kick_ball_away;
 
             if( isPositioned() ) return turnTo_opponent_goal;
             else if( isGoalieReady() ) return main_loop;
@@ -279,9 +253,9 @@ public:
             theMotionRequest.walkRequest.target.translation.y = goliePosition.y;
             theMotionRequest.walkRequest.target.rotation = atan2(goliePosition.y, goliePosition.x);
 
-            theMotionRequest.walkRequest.speed.translation.x = SPQR::SPEED_X;
-            theMotionRequest.walkRequest.speed.translation.y = SPQR::SPEED_Y;
-            theMotionRequest.walkRequest.speed.rotation = 1;
+//            theMotionRequest.walkRequest.speed.translation.x = SPQR::SPEED_X;
+//            theMotionRequest.walkRequest.speed.translation.y = SPQR::SPEED_Y;
+//            theMotionRequest.walkRequest.speed.rotation = 1;
             theMotionRequest.motion = MotionRequest::walk;
 
             LookAtBall();
@@ -295,7 +269,7 @@ public:
 #ifdef GOALIE_DEBUG_MODE
             stateName = "turnTo_opponent_goal";
 #endif
-            if( ballIsInRange() ) return kick_ball_away;
+//            if( ballIsInRange() ) return kick_ball_away;
 
             if( isGoalieReady() ) return main_loop;
         }
@@ -315,6 +289,41 @@ public:
 
             LookUpAndDown();
         }
+
     }
 
+    state search_ball()
+    {
+        decision
+        {
+            if(theDiveHandle.rewardAck) return main_loop;
+        }
+        action
+        {
+            LookAtBall();
+            SearchAndStop();
+        }
+    }
+
+//    state kick_ball_away(){
+
+//        decision
+//        {
+//#ifdef GOALIE_DEBUG_MODE
+//            stateName = "kick_ball_away";
+//#endif
+
+//            if( !isGoalieReady() && !ballIsInRange(true) ) return goTo_goalie_position;
+//            else if( !isPositioned() && !ballIsInRange(true) ) return turnTo_opponent_goal;
+//            else if( isGoalieReady() && !ballIsInRange(true) ) return main_loop;
+
+////            if( !ballIsInRange(true) && !isGoalieReady() ) return goTo_goalie_position;
+//        }
+
+//        action
+//        {
+//            GoalieKickAway();
+//            LookAtBall();
+//        }
+//    }
 };
