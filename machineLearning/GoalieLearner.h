@@ -4,7 +4,7 @@
 // Uncomment if you want to have debug information
 #define GOALIE_DEBUG_MODE
 
-option GoalieLearningBeahavior
+option GoalieLearningBehavior
 {
 private:
 
@@ -135,7 +135,7 @@ public:
 //            if( ballIsInRange(true) && theBallModel.estimate.velocity.abs() < SPQR::GOALIE_MOVING_BALL_MIN_VELOCITY ) return kick_ball_away;
             if( !isGoalieReady() ) return goTo_goalie_position;
 
-            else if(ballIsSeen() && theDiveHandle.rewardAck)
+            else if(ballIsSeen() && !theDiveHandle.rewardAck)
             {
                 //if ball is moving fast enought
                 if(theBallModel.estimate.velocity.abs() >= SPQR::GOALIE_MOVING_BALL_MIN_VELOCITY)
@@ -156,7 +156,8 @@ public:
                                 cerr << "\033[0;32;1m\t[Goalie] DiveHandle::diveTimer: " << theDiveHandle.diveTime << " \033[0m" << endl;
                             }
 #endif
-                            if( theDiveHandle.diveTime != -1 && theDiveHandle.diveTime < SPQR::GOALIE_DIVE_TIME_TOLERANCE ) // best timing provided by the diveHandler
+                             // best timing provided by the diveHandler
+                            if( theDiveHandle.diveTime != -1 && theDiveHandle.diveTime < SPQR::GOALIE_DIVE_TIME_TOLERANCE )
                             {
 #ifdef GOALIE_DEBUG_MODE
                                 cerr << "\033[0;31;1m\t[Goalie] Dive! \033[0m" << endl;
@@ -253,9 +254,9 @@ public:
             theMotionRequest.walkRequest.target.translation.y = goliePosition.y;
             theMotionRequest.walkRequest.target.rotation = atan2(goliePosition.y, goliePosition.x);
 
-//            theMotionRequest.walkRequest.speed.translation.x = SPQR::SPEED_X;
-//            theMotionRequest.walkRequest.speed.translation.y = SPQR::SPEED_Y;
-//            theMotionRequest.walkRequest.speed.rotation = 1;
+            theMotionRequest.walkRequest.speed.translation.x = SPQR::SPEED_X;
+            theMotionRequest.walkRequest.speed.translation.y = SPQR::SPEED_Y;
+            theMotionRequest.walkRequest.speed.rotation = 1;
             theMotionRequest.motion = MotionRequest::walk;
 
             LookAtBall();
