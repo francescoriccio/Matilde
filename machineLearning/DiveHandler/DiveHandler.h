@@ -176,17 +176,17 @@ private:
 
     // Dive type currently selected
     Dive diveType;
-    // Current learning state
-    LearningState state;
 
+    // Current learning state
+    LearningState state;  
     // Learning agent
     CoeffsLearner* learner;
-
     // Obtained rewards
     std::list<float> rewardHistory;
+
     // Opponent team current score
     int opponentScore;
-
+    // Flag enabled when a dive is performed
     bool dived;
 
     // Estimated time the ball needs to reach the goal
