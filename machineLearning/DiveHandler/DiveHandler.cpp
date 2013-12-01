@@ -21,7 +21,7 @@
 #include "DiveHandler.h"
 
 // Uncomment to have debug information
-//#define DIVEHANDLER_DEBUG
+#define DIVEHANDLER_DEBUG
 #define DIVEHANDLER_TRAINING
 //#define RAND_PERMUTATIONS
 
@@ -372,6 +372,9 @@ bool DiveHandler::PGLearner::updateCoeffs()
             for( unsigned int i=0; i<coeffs_avgGradient.size(); ++i )
                 coeffs.at(i) += - (coeffs_avgGradient.at(i)/magnitude(coeffs_avgGradient)) * ETA;
 
+#ifdef DIVEHANDLER_TRAINING
+            SPQR_INFO("New coefficients: [ " << coeffs.at(0) << ", " << coeffs.at(1) << " ]");
+#endif
             ++iter_count;
 
             return true;
@@ -559,6 +562,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
             SPQR_INFO("Back-in-position time: " << tBackInPose);
             LEARNING_STATE( (int)state );
 #endif
+
             // The module is in the learning state and a reward has been received
             if( state == learning )
             {
@@ -603,7 +607,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
                     if (dived) dived = false;
                 }
                 // The goalie has performed a dive and yet the outcome is unknown
-                else if(dived && (theFrameInfo.time - theBallModel.timeWhenLastSeen) < 4000)
+                else if(dived && (theFrameInfo.time - theBallModel.timeWhenLastSeen) < 500)
                 {
                     // The ball is behind the goal line: save has been successful
                     if( theGlobalBallEstimation.singleRobotX > -SPQR::FIELD_DIMENSION_X )
@@ -622,6 +626,9 @@ void DiveHandler::update(DiveHandle& diveHandle)
                         // Clear the pending reward
                         if (!diveHandle.rewardAck)
                             diveHandle.rewardAck = true;
+
+                        // Since the outcome is known, the dive action is done
+                        dived = false;
                     }
                     // The ball has passed the goal line: save has been unsuccessful
                     else
@@ -645,10 +652,10 @@ void DiveHandler::update(DiveHandle& diveHandle)
                         // Clear the pending reward
                         if (!diveHandle.rewardAck)
                             diveHandle.rewardAck = true;
-                    }
 
-                    // Since the outcome is known, the dive action is done
-                    dive = false;
+                        // Since the outcome is known, the dive action is done
+                        dived = false;
+                    }
                 }
             }
 
@@ -656,12 +663,15 @@ void DiveHandler::update(DiveHandle& diveHandle)
             if( state == learning )
                 learner->updateParams(rewardHistory);
 
+            // Compute the dive time using the current coefficients as T = alpha2 * (alpha1*T_PAPO - T_dive)
+            float diveTime = (learner->getCoeffs()).at(1) * ( (learner->getCoeffs()).at(0) * tBall2Goal - tDive );
+
 #ifdef DIVEHANDLER_DEBUG
             SPQR_INFO( "Estimated overall time to dive and recover position: " <<
                       computeDiveAndRecoverTime( (learner->getCoeffs()).at(0), (learner->getCoeffs()).at(1) ) );
+            SPQR_INFO("Suggested dive in " << diveTime << " ms. ");
 #endif
-            // Compute the dive time using the current coefficients as T = alpha2 * (alpha1*T_PAPO - T_dive)
-            float diveTime = (learner->getCoeffs()).at(1) * ( (learner->getCoeffs()).at(0) * tBall2Goal - tDive );
+
             // Update the DiveHandle
             if (diveTime > 0.0)
                 diveHandle.diveTime = diveTime;
@@ -671,12 +681,9 @@ void DiveHandler::update(DiveHandle& diveHandle)
 #ifdef DIVEHANDLER_TRAINING
             if (diveTime > 0.0)
             {
-                SPQR_INFO("Suggested dive in " << diveHandle.diveTime << " ms. ");
                 if (diveHandle.diveTime < SPQR::GOALIE_DIVE_TIME_TOLERANCE)
                     SPQR_INFO("Dive now! ");
             }
-            else
-                SPQR_INFO("Stay still... ");
 #endif
 
         }

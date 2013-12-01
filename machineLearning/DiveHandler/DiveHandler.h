@@ -57,7 +57,7 @@ END_MODULE
 #define GAMMA 0.5
 #define BUFFER_DIM 10
 #define REWARDS_HISTORY_SIZE 15
-#define ETA 1
+#define ETA 0.4
 #define EPSILON 0.15
 #define T 15
 
