@@ -7,8 +7,8 @@ namespace SPQR
 	/************ GAME CONTROLLER ************/
 	static const std::string IP_GOALIE 										= "10.0.19.14";
 	static const int CHEST_BUTTON_MANUAL_GAME_CONTROLLER_PORT				= 18003;
-	static const int FIELD_DIMENSION_X										= 2000;
-	static const int FIELD_DIMENSION_Y										= 1500;
+        static const int FIELD_DIMENSION_X										= 3000;
+        static const int FIELD_DIMENSION_Y										= 2000;
 	
 	static const unsigned int POLICY										= 0;		///{STABLE ="0", S_POSITIONIG_X ="1", S_POSITIONIG_XY ="2", WALL ="3", TANK ="4", STATIC_POSITIONG="5"};
 	static const unsigned int STRATEGY										= 0;		///{DRIBBLING ="0", PASSING ="1"};
@@ -20,7 +20,8 @@ namespace SPQR
 	static const int MAXIMUM_DISTANCE_BALL_VIEWED							= 6000;
 	static const int MAXIMUM_DISTANCE_ON_THE_FIELD							= 11000;
     static const unsigned int TABLE_ROWS									= 5;		/// TABLE_ROWS also equals to the number of roles.
-    static const unsigned int TABLE_COLUMNS									= 10;
+    static const unsigned int ACTIVE_ROLES                                                                      = 5;            /// Active roles (including the goalie) => max 5 (goalie, defender, supporter, jolly, striker)
+    static const unsigned int TABLE_COLUMNS									= ACTIVE_ROLES+4;
 	static const unsigned int DEAD_ROBOT_TIME_THRESHOLD						= 5000;
 	static const unsigned int HYSTERESIS_PERIOD_IN_CYCLES					= 100;
 	static const unsigned int COORDINATION_INFORMATION_NETWORK_FREQUENCY	= 10;		/// FREQUENCY!
@@ -74,35 +75,38 @@ namespace SPQR
 	static const float JOLLY_KICKOFF_NO_BALL_POSITION_X						= 0.75 * FIELD_DIMENSION_X;
     static const float JOLLY_KICKOFF_NO_BALL_POSITION_Y						= -0.50 * FIELD_DIMENSION_Y;
     
-	/************ GOALIE ************/
+    /************ GOALIE ************/
     static const float			GOALIE_BASE_POSITION_X						= -FIELD_DIMENSION_X + 250;	/// [mm]  //TODO take this from theFieldDimensions
     static const float			GOALIE_BASE_POSITION_Y						= 0;		/// [mm]
     static const float			GOALIE_BASE_POSITION_BEARING				= 0;		/// [mm]
+
+    static const int                    GOALIE_LEARNING_STATE                                   = 3; /// 1 = learning disabled, 3 = learning enabled
 
     static const float          GOALIE_DIVE_TIME                            = 3000;
     static const float          GOALIE_DIVE_RECOVER_TIME                    = 3000;
     static const float          GOALIE_DIVE_REPOSITION_TIME                 = 3000;
 
-    static const float          GOALIE_CLOSE_DIVE_TIME                      = 1500;
-    static const float          GOALIE_CLOSE_DIVE_RECOVER_TIME              = 1500;
+static const float          GOALIE_CLOSE_DIVE_TIME                      = 1500;
+static const float          GOALIE_CLOSE_DIVE_RECOVER_TIME              = 1500;
 
-    static const float          GOALIE_STOP_BALL_TIME                       = 2000;
-    static const float          GOALIE_STOP_BALL_RECOVER_TIME               = 2000;
+static const float          GOALIE_STOP_BALL_TIME                       = 2000;
+static const float          GOALIE_STOP_BALL_RECOVER_TIME               = 2000;
 
-    static const float			GOALIE_POSE_X_TOLLERANCE					= 150;		/// [mm]
-    static const float			GOALIE_POSE_Y_TOLLERANCE					= 150;		/// [mm]
-    static const float			GOALIE_POSE_ANGLE_TOLLERANCE				= 10;		/// [deg]
-    static const float			GOALIE_POSE_X_TOLLERANCE_AFTER_DIVE			= 150;		/// [mm]
-    static const float			GOALIE_POSE_Y_TOLLERANCE_AFTER_DIVE			= 150;		/// [mm]
+static const float			GOALIE_POSE_X_TOLLERANCE					= 150;		/// [mm]
+static const float			GOALIE_POSE_Y_TOLLERANCE					= 150;		/// [mm]
+static const float			GOALIE_POSE_ANGLE_TOLLERANCE				= 10;		/// [deg]
+static const float			GOALIE_POSE_X_TOLLERANCE_AFTER_DIVE			= 150;		/// [mm]
+static const float			GOALIE_POSE_Y_TOLLERANCE_AFTER_DIVE			= 150;		/// [mm]
 
-    static const float          GOALIE_DIVE_TIME_TOLERANCE                  = 100;      /// [ms]
+static const float          GOALIE_DIVE_TIME_TOLERANCE                  = 100;      /// [ms]
 
-    static const float			GOALIE_MOVING_BALL_MIN_VELOCITY				= 10;		/// [mm/s]
-    static const float			GOALIE_EPSILON_COLLINEAR					= 0.001;	/// [??]
-    static const float			GOALIE_FAR_LIMIT_Y							= 800;		/// a little more than goal post   //TODO take this from FieldDimensions
-    static const float			GOALIE_CLOSE_LIMIT_Y						= 200;		/// dont-dive distance  //TODO take this from FieldDimensions
-    static const unsigned int	GOALIE_MIN_TIME_WHEN_LAST_SEEN				= 500;		/// [ms]
-    static const float			GOALIE_MIN_BALL_DIST_FROM_POST				= 500;
+static const float			GOALIE_MOVING_BALL_MIN_VELOCITY				= 10;		/// [mm/s]
+static const float			GOALIE_EPSILON_COLLINEAR					= 0.001;	/// [??]
+static const float			GOALIE_FAR_LIMIT_Y							= 800;		/// a little more than goal post   //TODO take this from FieldDimensions
+static const float			GOALIE_CLOSE_LIMIT_Y						= 200;		/// dont-dive distance  //TODO take this from FieldDimensions
+static const unsigned int	GOALIE_MIN_TIME_WHEN_LAST_SEEN				= 500;		/// [ms]
+static const float			GOALIE_MIN_BALL_DIST_FROM_POST				= 500;
 
-    static const float			GOALIE_MAX_DIST_BALL_IN_RANGE_ABS			= 500;		/// [mm]
+static const float			GOALIE_MAX_DIST_BALL_IN_RANGE_ABS			= 500;		/// [mm]
 }
+
