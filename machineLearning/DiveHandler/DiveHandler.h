@@ -25,9 +25,9 @@
 
 #include "Tools/Module/Module.h"
 #include "Representations/Modeling/BallModel.h"
-#include <Representations/Infrastructure/TeamInfo.h>
-#include <Representations/Infrastructure/RobotInfo.h>
-#include <Representations/SPQR-Representations/ConfigurationParameters.h>
+#include "Representations/Infrastructure/TeamInfo.h"
+#include "Representations/Infrastructure/RobotInfo.h"
+#include "Representations/SPQR-Representations/ConfigurationParameters.h"
 #include "Representations/SPQR-Representations/RobotPoseSpqrFiltered.h"
 #include "Representations/SPQR-Representations/GlobalBallEstimation.h"
 #include "Representations/SPQR-Representations/DiveHandle.h"
@@ -38,7 +38,7 @@
 
 
 MODULE(DiveHandler)
-    REQUIRES(OpponentTeamInfo)
+        REQUIRES(OpponentTeamInfo)
 	REQUIRES(RobotInfo)
 	REQUIRES(RobotPoseSpqrFiltered)
 	REQUIRES(BallModel)
@@ -48,7 +48,7 @@ END_MODULE
 
 
 // Termination conditions
-#define MAX_ITER 30
+#define MAX_ITER 300
 #define CONVERGENCE_THRESHOLD 0.05
 
 // PG parameters
@@ -195,6 +195,8 @@ private:
 
     // Estimated intersection between the ball projection and the goal line
     float ballProjectionIntercept;
+    // Estimated distance of the ball from the own goal
+    float distanceBall2Goal;
 
     // Computes parameters using the ball estimated position and velocity
     void estimateDiveTimes();
