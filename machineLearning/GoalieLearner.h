@@ -4,7 +4,7 @@
 // Uncomment if you want to have debug information
 #define GOALIE_DEBUG_MODE
 
-option GoalieLearningBehavior
+option GoalieLearner
 {
 private:
 
@@ -297,7 +297,7 @@ public:
     {
         decision
         {
-            if(theDiveHandle.rewardAck) return main_loop;
+            if(theDiveHandle.rewardAck && ballIsSeen()) return main_loop;
         }
         action
         {

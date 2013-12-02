@@ -21,8 +21,8 @@
 #include "DiveHandler.h"
 
 // Uncomment to have debug information
-#define DIVEHANDLER_DEBUG
-#define DIVEHANDLER_TRAINING
+//#define DIVEHANDLER_DEBUG
+//#define DIVEHANDLER_TRAINING
 //#define RAND_PERMUTATIONS
 
 #define NEGATIVE_REWARD -1.0
@@ -541,7 +541,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
     if (theRobotInfo.number == 1)
     {
         // Check if the goalie is currently performing a dive
-        if( (diveHandle.diveTime >= 0.0) && (diveHandle.diveTime < SPQR::GOALIE_DIVE_TIME_TOLERANCE) )
+        if( /*(diveHandle.diveTime >= 0.0) &&*/ (diveHandle.diveTime < SPQR::GOALIE_DIVE_TIME_TOLERANCE) )
                 dived = true;
 
         // Compute the ball projection estimate
@@ -573,6 +573,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
                     state = waitReward;
                     // Flag a pending reward to the goalie behavior
                     diveHandle.rewardAck = false;
+                    SPQR_ERR("waiting reward");
                 }
                 else
                     // The algorithm has converged: turning off learning
@@ -600,11 +601,12 @@ void DiveHandler::update(DiveHandle& diveHandle)
                     // A reward has been received: re-enable learning
                     state = learning;
                     // Clear the pending reward
-                    if (!diveHandle.rewardAck)
+                    if(!diveHandle.rewardAck)
                         diveHandle.rewardAck = true;
+                    SPQR_SUCCESS("reward accepted");
 
                     // Since the opponent team scored, the dive action should be done
-                    if (dived) dived = false;
+                    if(dived) dived = false;
                 }
                 // The goalie has performed a dive and yet the outcome is unknown
                 else if(dived && (theFrameInfo.time - theBallModel.timeWhenLastSeen) < 500)
@@ -624,8 +626,9 @@ void DiveHandler::update(DiveHandle& diveHandle)
                         // A reward has been received: re-enable learning
                         state = learning;
                         // Clear the pending reward
-                        if (!diveHandle.rewardAck)
+                        if(!diveHandle.rewardAck)
                             diveHandle.rewardAck = true;
+                        SPQR_SUCCESS("reward accepted");
 
                         // Since the outcome is known, the dive action is done
                         dived = false;
@@ -650,8 +653,9 @@ void DiveHandler::update(DiveHandle& diveHandle)
                         // A reward has been received: re-enable learning
                         state = learning;
                         // Clear the pending reward
-                        if (!diveHandle.rewardAck)
+                        if(!diveHandle.rewardAck)
                             diveHandle.rewardAck = true;
+                        SPQR_SUCCESS("reward accepted");
 
                         // Since the outcome is known, the dive action is done
                         dived = false;
@@ -681,7 +685,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
 #ifdef DIVEHANDLER_TRAINING
             if (diveTime > 0.0)
             {
-                if (diveHandle.diveTime < SPQR::GOALIE_DIVE_TIME_TOLERANCE)
+                if(diveHandle.diveTime < SPQR::GOALIE_DIVE_TIME_TOLERANCE)
                     SPQR_INFO("Dive now! ");
             }
 #endif
