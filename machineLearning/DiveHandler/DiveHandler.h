@@ -40,6 +40,7 @@
 
 MODULE(DiveHandler)
     REQUIRES(OpponentTeamInfo)
+    REQUIRES(OwnTeamInfo)
     REQUIRES(FrameInfo)
     REQUIRES(RobotInfo)
     REQUIRES(RobotPoseSpqrFiltered)
@@ -186,8 +187,7 @@ private:
 
     // Opponent team current score
     int opponentScore;
-    // Flag enabled when a dive is performed
-    bool dived;
+    int ownScore;
 
     // Estimated time the ball needs to reach the goal
     // a.k.a. Tpapo (historical reasons)

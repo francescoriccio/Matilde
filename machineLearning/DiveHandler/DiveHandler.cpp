@@ -390,7 +390,7 @@ bool DiveHandler::PGLearner::updateCoeffs()
  */
 DiveHandler::DiveHandler():
     diveType(none), state(static_cast<DiveHandler::LearningState>(SPQR::GOALIE_LEARNING_STATE)),
-    learner(new PGLearner(this, 2, EPSILON, T, 1.0, true)), opponentScore(0), dived(false), tBall2Goal(SPQR::FIELD_DIMENSION_Y),
+    learner(new PGLearner(this, 2, EPSILON, T, 1.0, true)), opponentScore(0), tBall2Goal(SPQR::FIELD_DIMENSION_Y),
     tDive(0.0), tBackInPose(0.0), ballProjectionIntercept(SPQR::FIELD_DIMENSION_Y), distanceBall2Goal(SPQR::FIELD_DIMENSION_X)
 {
 #ifdef DIVEHANDLER_TRAINING
@@ -600,53 +600,23 @@ void DiveHandler::update(DiveHandle& diveHandle)
                         diveHandle.rewardAck = true;
                 }
                 // The goalie has performed a dive and yet the outcome is unknown
-                else if(dived && (theFrameInfo.time - theBallModel.timeWhenLastSeen) < 500)
+                else if(ownScore != (int)theOwnTeamInfo.score)
                 {
-                    // The ball is behind the goal line: save has been successful
-                    if( theGlobalBallEstimation.singleRobotX > -SPQR::FIELD_DIMENSION_X )
-                    {
-                        // The learner obtains a positive reward
-                        rewardHistory.push_front(POSITIVE_REWARD);
+                    // The learner obtains a positive reward
+                    rewardHistory.push_front(POSITIVE_REWARD);
 
-                        // Crop the buffer
-                        if (rewardHistory.size() > REWARDS_HISTORY_SIZE)
-                            rewardHistory.resize(REWARDS_HISTORY_SIZE);
+                    // Crop the buffer
+                    if (rewardHistory.size() > REWARDS_HISTORY_SIZE)
+                        rewardHistory.resize(REWARDS_HISTORY_SIZE);
 #ifdef DIVEHANDLER_TRAINING
-                        SPQR_SUCCESS("The goalie has succeeded! Positive reward for the learner.  ");
+                    SPQR_SUCCESS("The goalie has succeeded! Positive reward for the learner.  ");
 #endif
-                        // A reward has been received: re-enable learning
-                        state = learning;
-                        // Clear the pending reward
-                        if(!diveHandle.rewardAck)
-                            diveHandle.rewardAck = true;
+                    // A reward has been received: re-enable learning
+                    state = learning;
+                    // Clear the pending reward
+                    if(!diveHandle.rewardAck)
+                        diveHandle.rewardAck = true;
 
-                    }
-                    // The ball has passed the goal line: save has been unsuccessful
-                    else
-                    {
-                        // The learner obtains a negative reward
-                        rewardHistory.push_front(NEGATIVE_REWARD);
-
-                        // Crop the buffer
-                        if (rewardHistory.size() > REWARDS_HISTORY_SIZE)
-                            rewardHistory.resize(REWARDS_HISTORY_SIZE);
-                        // Update opponent score
-                        if(opponentScore != (int)theOpponentTeamInfo.score)
-                            ++opponentScore;
-
-#ifdef DIVEHANDLER_TRAINING
-                        SPQR_FAILURE("The opponent team scored! Negative reward for the learner. ");
-#endif
-
-                        // A reward has been received: re-enable learning
-                        state = learning;
-                        // Clear the pending reward
-                        if(!diveHandle.rewardAck)
-                            diveHandle.rewardAck = true;
-
-                        // Since the outcome is known, the dive action is done
-                        dived = false;
-                    }
                 }
             }
 
