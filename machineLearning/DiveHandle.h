@@ -9,14 +9,15 @@ private:
 		* @param in  streaming in ...
 		* @param out ... streaming out.
 	*/
-	void serialize(In* in, Out* out)
-	{
-		STREAM_REGISTER_BEGIN;
-                STREAM(diveTime);
-		STREAM(ballProjectionEstimate);
-		STREAM(diveType);
-		STREAM_REGISTER_FINISH;
-	}
+    void serialize(In* in, Out* out)
+    {
+        STREAM_REGISTER_BEGIN;
+        STREAM(diveTime);
+        STREAM(ballProjectionEstimate);
+        STREAM(diveType);
+        STREAM(rewardAck);
+        STREAM_REGISTER_FINISH;
+    }
 
 public:
 	enum Dive
@@ -25,15 +26,19 @@ public:
 		lDive, 
 		rDive, 
 		lcloseDive, 
-		rcloseDive
+        rcloseDive,
+        stopBall
 	};
 	
 	typedef int Dive;
 	
-        float diveTime;
-	float ballProjectionEstimate;
-	Dive diveType;
-	
-	/** Constructor */
-        DiveHandle() : diveTime(-1.0), ballProjectionEstimate(0.0), diveType(none) {;}
+    float diveTime;
+    float ballProjectionEstimate;
+    Dive diveType;
+
+    bool rewardAck;
+
+    /** Constructor */
+    DiveHandle() : diveTime(-1.0), ballProjectionEstimate(0.0),
+        diveType(none),rewardAck(false) {;}
 };

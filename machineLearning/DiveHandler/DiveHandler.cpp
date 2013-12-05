@@ -21,11 +21,24 @@
 #include "DiveHandler.h"
 
 // Uncomment to have debug information
-#define DEBUG_MODE
+//#define DIVEHANDLER_DEBUG
+#define DIVEHANDLER_TRAINING
+//#define RAND_PERMUTATIONS
+
+#define NEGATIVE_REWARD -1.0
+#define POSITIVE_REWARD 1.0
 
 // Debug messages template
 #define SPQR_ERR(x) std::cerr << "\033[22;31;1m" <<"[DiveHandler] " << x << "\033[0m"<< std::endl;
 #define SPQR_INFO(x) std::cerr << "\033[22;34;1m" <<"[DiveHandler] " << x << "\033[0m" << std::endl;
+#define SPQR_SUCCESS(x) std::cerr << "\033[0;32;1m" <<"[DiveHandler] " << x << "\033[0m" << std::endl;
+#define SPQR_FAILURE(x) std::cerr << "\033[22;31;1m" <<"[DiveHandler] " << x << "\033[0m"<< std::endl;
+
+#define LEARNING_STATE(x) \
+    if(x == 1) std::cerr << "\033[22;34;1m"<<"Learner state: disabled. "<<"\033[0m" << std::endl; \
+    else if(x == 2) std::cerr << "\033[22;34;1m"<<"Learner state: paused (waiting for reward). "<<"\033[0m" << std::endl; \
+    else if(x == 3) std::cerr << "\033[22;34;1m"<<"Learner state: enabled. "<<"\033[0m" << std::endl; \
+
 
 MAKE_MODULE(DiveHandler, SPQR-Modules)
 
@@ -62,7 +75,6 @@ void DiveHandler::CoeffsLearner::setParam(const std::string& _key, float _value)
 
 /** --------------------- CoeffsLearner: Policy Gradient --------------------- */
 
-
 /*
  * Default constructor. Initializes the algorithm parameters and coefficients.
  * Input arguments are:
@@ -82,56 +94,144 @@ DiveHandler::PGLearner::PGLearner( DiveHandler* _dhPtr, int _nCoeffs, float _eps
         // Random initialization in [0, INIT_VALUE]
         srand(time(NULL));
         for( int i=0; i<_nCoeffs; ++i)
-            coeffs.at(i) = (rand()/RAND_MAX)*_initValue;
+            coeffs.at(i) = (static_cast<float>(rand()%101)/100 ) *_initValue;
     }
 
     // Initializing parameters
     setParam("epsilon", _epsilon);
+
+#ifdef RAND_PERMUTATIONS
     setParam("T", _T);
+#else
+    setParam("T", pow(3,coeffs.size()));
+#endif
 }
 
 /* TOTEST&COMMENT */
 bool DiveHandler::PGLearner::converged()
 {
-    // Average every coefficients variation across the buffer
-
-    // Compute mean
-    float avg_variation = magnitude(coeffs) - magnitude(coeffsBuffer.front());
-    for (unsigned int i = 0; i < coeffsBuffer.size()-1; ++i)
-        avg_variation += ( magnitude(coeffsBuffer.at(i)) - magnitude(coeffsBuffer.at(i+1)) ) / coeffsBuffer.size();
-
-    // Compute standard deviation
-    float std_variation = pow(magnitude(coeffs)-magnitude(coeffsBuffer.front()) - avg_variation, 2);
-    for (unsigned int i = 0; i < coeffsBuffer.size()-1; ++i)
-        std_variation += (pow(magnitude(coeffsBuffer.at(i))-magnitude(coeffsBuffer.at(i+1)) - avg_variation, 2)) / coeffsBuffer.size();
-    std_variation = sqrt(std_variation);
-
-    // Check result against variation threshold
-    if ((avg_variation < CONVERGENCE_THRESHOLD) && (std_variation < CONVERGENCE_THRESHOLD))
-    {
-#ifdef DEBUG_MODE
-        SPQR_INFO("PGLearner converged!");
-        SPQR_INFO("Coefficients values:");
-        for (unsigned int i = 0; i < coeffs.size(); ++i)
-            SPQR_INFO("\t" << coeffs.at(i));
-#endif
-        return true;
-    }
-    else
+    // Skip convergence check if the buffer is not full
+    if (coeffsBuffer.size() < BUFFER_DIM)
         return false;
+    // Average every coefficients variation across the buffer
+    else
+    {
+        // Compute variations mean
+        // Delta previous to current step
+        float avg_variation = (magnitude(coeffs) - magnitude(coeffsBuffer.front()))/coeffsBuffer.size() ;
+        // Iterate over the whole buffer and compute deltas from step i-1 to i
+        PGbuffer::const_iterator i = coeffsBuffer.begin();
+        PGbuffer::const_iterator j = coeffsBuffer.begin(); ++j;
+        while (j != coeffsBuffer.end())
+        {
+            avg_variation += ( magnitude(*i) - magnitude(*j) )/coeffsBuffer.size();
+            ++i; ++j;
+        }
+
+        // Compute variations standard deviation
+        // Delta previous to current step
+        float std_variation = pow(magnitude(coeffs)-magnitude(coeffsBuffer.front()) - avg_variation, 2) / coeffsBuffer.size();
+        // Iterate over the whole buffer and compute deltas from step i-1 to i
+        PGbuffer::const_iterator k = coeffsBuffer.begin();
+        PGbuffer::const_iterator t = coeffsBuffer.begin(); ++t;
+        while (t != coeffsBuffer.end())
+        {
+            std_variation += (pow(magnitude(*k)-magnitude(*t) - avg_variation, 2)) / coeffsBuffer.size();
+            ++k; ++t;
+        }
+        std_variation = sqrt(std_variation);
+
+        // Check result against variation threshold
+        if ((avg_variation < CONVERGENCE_THRESHOLD) && (std_variation < CONVERGENCE_THRESHOLD))
+        {
+    #ifdef DIVEHANDLER_TRAINING
+            SPQR_SUCCESS("PGLearner converged!");
+            SPQR_SUCCESS("Coefficients values:");
+            for (unsigned int i = 0; i < coeffs.size(); ++i)
+                SPQR_SUCCESS("\t" << coeffs.at(i));
+    #endif
+            return true;
+        }
+        else
+            return false;
+    }
 }
 
-
-/* TODO */
+/* TOTEST&COMMENT */
 void DiveHandler::PGLearner::generatePerturbations()
 {
-    // store perturbations
+    // Clean up the buffer
+    if(! perturbationsBuffer.empty())
+        perturbationsBuffer.clear();
+
+#ifdef RAND_PERMUTATIONS
+    srand(time(NULL));
+
+    for(int i=0; i<params["T"]; ++i)
+    {
+        std::vector<float> perturbation(coeffs);
+
+        for(unsigned int j=0; j<coeffs.size(); ++j)
+            perturbation.at(j) += (rand()%3 -1)*params["epsilon"];
+
+        perturbationsBuffer.push_back(perturbation);
+
+#ifdef DIVEHANDLER_DEBUG
+        SPQR_INFO("Generated perturbation: [" << perturbation.at(0) << ", " << perturbation.at(1) << "]");
+#endif
+
+    }
+#else
+    // Initialize a placeholder for perturbations
+    std::vector<float> perturbation (coeffs.size(),0.0);
+
+    // Generate all possible combinations recursively
+    generatePerturbations(&perturbation, 0);
+
+#ifdef DIVEHANDLER_DEBUG
+    PGbuffer::const_iterator printer = perturbationsBuffer.begin();
+    while(printer != perturbationsBuffer.end())
+    {
+        SPQR_INFO("Generated perturbation: [" << (*printer).at(0) << ", " << (*printer).at(1) << "]");
+        ++printer;
+    }
+#endif
+
+#endif
+
 }
 
-/*
- * TOCOMMENT
- */
+/* TOTEST&COMMENT */
+void DiveHandler::PGLearner::generatePerturbations(std::vector<float>* partial_perturbation, unsigned int index)
+{
+    if (index == partial_perturbation->size()-1)
+    {
+        // Base case: generate all combinations of the last coefficient for the current partial vector
+        for (int perturbation_type = -1; perturbation_type <= 1; ++perturbation_type)
+        {
+            // Compute last index and generate the final perturbation
+            std::vector<float> perturbation (*partial_perturbation);
+            perturbation.at(index) = coeffs.at(index) + perturbation_type * params["epsilon"];
 
+            // Update the perturbations buffer
+            perturbationsBuffer.push_back(perturbation);
+        }
+    }
+    else
+    {
+        for (int perturbation_type = -1; perturbation_type <= 1; ++perturbation_type)
+        {
+            // Generate current perturbation
+            partial_perturbation->at(index) = coeffs.at(index) + perturbation_type * params["epsilon"];
+
+            // Generate all possible perturbations for the current index
+            generatePerturbations(partial_perturbation, index+1);
+        }
+    }
+}
+
+
+/* TOCOMMENT */
 float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
 {
     // Dimensions check
@@ -140,18 +240,146 @@ float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
     return diveHandler_ptr->computeDiveAndRecoverTime(coeffs.at(0) + R.at(0), coeffs.at(1) + R.at(1));
 }
 
-/* TODO */
 
-bool DiveHandler::PGLearner::updateCoeffs()
+/* TOTEST&COMMENT */
+void DiveHandler::PGLearner::updateParams(const std::list<float>& rewards)
 {
-    // while stop criterion: MAX_ITER || converged()
-    // generate the set of perturbation and store it in the private member
-    // for each perturbation, evaluate it with the objective function and store the result in a temporary container
-    // for each parameter, compute the 3 Avg values and determine An
-    // update the coeffs with -(A/abs(A))*ETA where A is the 2D vector of Ans
-    return false;
+    float reward_score = 0.0;
+    int discount_exp = 0;
+    std::list<float>::const_iterator i = rewards.begin();
+    while (i != rewards.end())
+    {
+        // Computing discounted rewards
+        reward_score += (*i) * pow(GAMMA, discount_exp);
+        ++i; ++discount_exp;
+    }
+
+    //Adjusting PG parameters according to the obtained score
+    setParam("epsilon", exp( reward_score / rewards.size() ) * getParam("epsilon"));
+
+#ifdef DIVEHANDLER_TRAINING
+    SPQR_INFO( "Epsilon value changed to: " << getParam("epsilon") << " according to the obtained rewards. ");
+#endif
+
+#ifdef RAND_PERMUTATIONS
+    setParam("T", exp( reward_score / rewards.size() ) * getParam("T"));
+#endif
 }
 
+
+/* TOTEST&COMMENT */
+bool DiveHandler::PGLearner::updateCoeffs()
+{
+
+#ifdef DIVEHANDLER_TRAINING
+    SPQR_INFO( "PG algorithm, iteration " << iter_count << "... " );
+#endif
+
+    if( iter_count == MAX_ITER || converged() )
+        return false;
+    else
+        {
+            // First generate the set of random perturbation for the current coefficients
+            generatePerturbations();
+
+            // For each perturbation, evaluate with the objective function and store the result in a temporary container
+            std::vector<float> evaluatedPerturbations (perturbationsBuffer.size());
+            PGbuffer::const_iterator evaluator;
+            for(evaluator = perturbationsBuffer.begin(); evaluator != perturbationsBuffer.end(); ++evaluator)
+                evaluatedPerturbations.push_back( evaluatePerturbation(*evaluator) );
+
+            // Compute the average 'gradient' for the current coefficients
+            std::vector<float> coeffs_avgGradient(coeffs.size());
+
+#ifdef RAND_PERMUTATIONS
+            // For each coefficient, compute the average score to determine the correspondent 'gradient' entry
+            PGbuffer::const_iterator current_perturbation = perturbationsBuffer.begin();
+            for( unsigned int n = 0; n < coeffs.size(); ++n )
+            {
+                std::vector<float> score_plus, score_minus, score_zero;
+
+                // Keep track of the perturbation type and store each score in a container
+                for( unsigned int i = 0; i < evaluatedPerturbations.size(); ++i )
+                {
+                    if ( ((*current_perturbation).at(n) - coeffs.at(n)) > 0 )
+                        score_plus.push_back(evaluatedPerturbations.at(i));
+                    else if ( ((*current_perturbation).at(n) - coeffs.at(n)) < 0 )
+                        score_minus.push_back(evaluatedPerturbations.at(i));
+                    else
+                        score_zero.push_back(evaluatedPerturbations.at(i));
+
+                    ++current_perturbation;
+                }
+
+                // Sum up all positive perturbation scores
+                float avg_plus = 0.0;
+                for (unsigned int j = 0; j < score_plus.size(); ++j)
+                    avg_plus += score_plus.at(j) / score_plus.size();
+
+                // Sum up all negative perturbation scores
+                float avg_minus = 0.0;
+                for (unsigned int j = 0; j < score_minus.size(); ++j)
+                    avg_minus += score_minus.at(j) / score_minus.size();
+
+                // Sum up all null perturbation scores
+                float avg_zero = 0.0;
+                for (unsigned int j = 0; j < score_zero.size(); ++j)
+                    avg_zero += score_zero.at(j) / score_zero.size();
+
+                if( avg_zero <= avg_plus && avg_zero<= avg_minus )
+                    coeffs_avgGradient.at(n) = 0.0;
+                else
+                    coeffs_avgGradient.at(n) = avg_plus - avg_minus;
+            }
+#else
+            // For each coefficient, compute different averages to determine the correspondent 'gradient' entry
+            for( unsigned int n = 0; n < coeffs.size(); ++n )
+            {
+                int avg_selector = 0;
+                float avg_minus = 0.0 , avg_zero = 0.0, avg_plus = 0.0;
+                for( unsigned int i = 0; i < evaluatedPerturbations.size(); i = i + pow(3,n) )
+                {
+                    for( unsigned int k = i; k < i + pow(3,n); ++k )
+                    {
+                        float evaluation = evaluatedPerturbations.at(k) / (evaluatedPerturbations.size()/3);
+
+                        if( (avg_selector)%3 == 0 ) avg_minus += evaluation;
+                        if( (avg_selector)%3 == 1 ) avg_zero += evaluation;
+                        if( (avg_selector)%3 == 2 ) avg_plus += evaluation;
+                    }
+                    ++avg_selector;
+                }
+                // evaluate An
+                if( avg_zero <= avg_plus && avg_zero<= avg_minus )
+                    coeffs_avgGradient.at(coeffs.size() - (n +1)) = 0.0;
+                else
+                    coeffs_avgGradient.at(coeffs.size() - (n +1)) = avg_plus - avg_minus;
+            }
+#endif
+
+#ifdef DIVEHANDLER_TRAINING
+            SPQR_INFO("Computed policy gradient: [ " << coeffs_avgGradient.at(0)/magnitude(coeffs_avgGradient)
+                      << ", " << coeffs_avgGradient.at(1)/magnitude(coeffs_avgGradient) << " ]");
+#endif
+
+            // Update coefficients history
+            coeffsBuffer.push_front(coeffs);
+            // Crop buffer
+            if (coeffsBuffer.size() > BUFFER_DIM)
+                coeffsBuffer.resize(BUFFER_DIM);
+
+            // Update the coefficients following the gradient direction
+            for( unsigned int i=0; i<coeffs_avgGradient.size(); ++i )
+                coeffs.at(i) += - (coeffs_avgGradient.at(i)/magnitude(coeffs_avgGradient)) * ETA;
+
+#ifdef DIVEHANDLER_TRAINING
+            SPQR_INFO("New coefficients: [ " << coeffs.at(0) << ", " << coeffs.at(1) << " ]");
+#endif
+            ++iter_count;
+
+            return true;
+    }
+}
 
 
 /** --------------------------- Dive Handler ---------------------------- */
@@ -161,10 +389,11 @@ bool DiveHandler::PGLearner::updateCoeffs()
  * Default class constructor: initializes all parameters and generates the learning agent.
  */
 DiveHandler::DiveHandler():
-    diveType(none), learner(new PGLearner(this, 2, EPSILON, T, 1.0)),
-    tBall2Goal(SPQR::FIELD_DIMENSION_Y), tDive(0.0), tBackInPose(0.0)
+    diveType(none), state(static_cast<DiveHandler::LearningState>(SPQR::GOALIE_LEARNING_STATE)),
+    learner(new PGLearner(this, 2, EPSILON, T, 1.0, true)), opponentScore(0), tBall2Goal(SPQR::FIELD_DIMENSION_Y),
+    tDive(0.0), tBackInPose(0.0), ballProjectionIntercept(SPQR::FIELD_DIMENSION_Y), distanceBall2Goal(SPQR::FIELD_DIMENSION_X)
 {
-#ifdef DEBUG_MODE
+#ifdef DIVEHANDLER_TRAINING
     SPQR_INFO("Initializing PGlearner...");
     std::vector<float> coeffs = learner->getCoeffs();
     SPQR_INFO("Coefficients: alpha 1 = " << coeffs.at(0) << ", alpha 2 = " << coeffs.at(1));
@@ -175,7 +404,6 @@ DiveHandler::DiveHandler():
 /*
  * Default class destructor: destroys the learning agent and deallocates memory.
  */
-
 DiveHandler::~DiveHandler()
 {
     if (learner) delete learner;
@@ -222,6 +450,8 @@ void DiveHandler::estimateBallProjection()
         else if( yIntercept < -SPQR::GOALIE_FAR_LIMIT_Y )
             // Far intercept on the right
             diveType = rDive;
+        else if( fabs(yIntercept) < SPQR::GOALIE_CLOSE_LIMIT_Y/2)
+            diveType = stopBall;
         else
             // Any other case: no dive at all
             diveType = none;
@@ -232,12 +462,19 @@ void DiveHandler::estimateBallProjection()
         tDive = SPQR::GOALIE_DIVE_TIME;
     else if (diveType == lcloseDive || diveType == rcloseDive )
         tDive = SPQR::GOALIE_CLOSE_DIVE_TIME;
+    else if (diveType == stopBall )
+        tDive = SPQR::GOALIE_STOP_BALL_TIME;
     else
         tDive = 0.0;
 
     // Updating the class parameters with the obtained value
     ballProjectionIntercept = yIntercept;
 
+    // Computing the distance vector from the ball to the goal
+    float delta_x = -SPQR::FIELD_DIMENSION_X - theGlobalBallEstimation.singleRobotX;
+    float delta_y = ballProjectionIntercept - theGlobalBallEstimation.singleRobotY;
+    // Estimated distance from the ball
+    distanceBall2Goal = sqrt( delta_x*delta_x + delta_y*delta_y);
 }
 
 /*
@@ -247,12 +484,6 @@ void DiveHandler::estimateBallProjection()
  */
 void DiveHandler::estimateDiveTimes()
 {
-    // Computing the distance vector from the ball to the goal
-    float delta_x = -SPQR::FIELD_DIMENSION_X - theGlobalBallEstimation.singleRobotX;
-    float delta_y = ballProjectionIntercept - theGlobalBallEstimation.singleRobotY;
-    // Estimated distance from the ball
-    float distanceBall2Goal = sqrt( delta_x*delta_x + delta_y*delta_y);
-
     // Check whether the ball is actually moving toward the goal
     if ( (theBallModel.estimate.velocity.abs() != 0.0)
          && (theBallModel.estimate.velocity.x < 0.0) )
@@ -274,21 +505,23 @@ void DiveHandler::estimateDiveTimes()
         tRecover = SPQR::GOALIE_DIVE_RECOVER_TIME;
         tReposition = SPQR::GOALIE_DIVE_REPOSITION_TIME;
     }
+    else if( diveType == stopBall )
+    {
+        // stop ball: the robot has to stand up and stop the ball
+        tRecover = SPQR::GOALIE_STOP_BALL_RECOVER_TIME;
+    }
 
     // Total time needed to recover the original position
     tBackInPose = tRecover + tReposition;
-
 }
 
-/*
- * TOCOMMENT
- */
+/* TOCOMMENT */
 inline float DiveHandler::computeDiveAndRecoverTime(float alpha1, float alpha2)
 {
     return alpha2*( alpha1*tBall2Goal - tDive ) + tBackInPose;
 }
 
-/* TODO */
+/* TOTEST&COMMENT */
 /*
  * The module update function.
  * At each time step, the goalie enables the DiveHandler if the ball is close enough.
@@ -303,6 +536,7 @@ inline float DiveHandler::computeDiveAndRecoverTime(float alpha1, float alpha2)
  */
 void DiveHandler::update(DiveHandle& diveHandle)
 {
+//    theOpponentTeamInfo.score;
     // Check you're actually the goalie...
     if (theRobotInfo.number == 1)
     {
@@ -312,57 +546,105 @@ void DiveHandler::update(DiveHandle& diveHandle)
         diveHandle.ballProjectionEstimate = ballProjectionIntercept;
 
         // Check whether the ball is close enough
-        if( theGlobalBallEstimation.singleRobotX < 0.0 && fabs(ballProjectionIntercept) < SPQR::FIELD_DIMENSION_Y )
+        if( (distanceBall2Goal < SPQR::FIELD_DIMENSION_X) && (fabs(ballProjectionIntercept) < SPQR::FIELD_DIMENSION_Y) )
         {
             // Estimate all temporal parameters
             estimateDiveTimes();
 
-#ifdef DEBUG_MODE
+#ifdef DIVEHANDLER_DEBUG
             SPQR_INFO("Ball projection: " << ballProjectionIntercept);
             SPQR_INFO("PAPO time: " << tBall2Goal);
             SPQR_INFO("Dive time: " << tDive);
             SPQR_INFO("Back-in-position time: " << tBackInPose);
+            LEARNING_STATE( (int)state );
 #endif
-            // The module is in the learning state and a reward has been received
-            if( state == learning )
-            {
-                // iterazione while PG
 
-                // state = waitReward;
+            // The module is in the learning state and a reward has been received
+            if( (state == learning) )
+            {
+                // Perform a single iteration of the learning algorithm
+                if( learner->updateCoeffs() )
+                {
+                    // Change the state in 'waiting for reward'
+                    state = waitReward;
+                    // Flag a pending reward to the goalie behavior
+                    diveHandle.rewardAck = false;
+                }
+                else
+                    // The algorithm has converged: turning off learning
+                    state = notLearning;
+
             }
             // The module is in the learning state, waiting for the next reward
             else if( state == waitReward )
             {
-                // polling for reward
+                // First case: game controller active and the opponent team scores
+                if(opponentScore != (int)theOpponentTeamInfo.score)
+                {
+                    // The learner obtains a negative reward
+                    rewardHistory.push_front(NEGATIVE_REWARD);
 
-                // if reward -> state = learning
+                    // Crop the buffer
+                    if (rewardHistory.size() > REWARDS_HISTORY_SIZE)
+                        rewardHistory.resize(REWARDS_HISTORY_SIZE);
+                    // Update opponent score
+                    opponentScore = (int)theOpponentTeamInfo.score;
+
+#ifdef DIVEHANDLER_TRAINING
+                    SPQR_FAILURE("The opponent team scored! Negative reward for the learner. ");
+#endif
+                    // A reward has been received: re-enable learning
+                    state = learning;
+                    // Clear the pending reward
+                    if(!diveHandle.rewardAck)
+                        diveHandle.rewardAck = true;
+                }
+                // The goalie has performed a dive and yet the outcome is unknown
+                else if(ownScore != (int)theOwnTeamInfo.score)
+                {
+                    // The learner obtains a positive reward
+                    rewardHistory.push_front(POSITIVE_REWARD);
+
+                    // Crop the buffer
+                    if (rewardHistory.size() > REWARDS_HISTORY_SIZE)
+                        rewardHistory.resize(REWARDS_HISTORY_SIZE);
+#ifdef DIVEHANDLER_TRAINING
+                    SPQR_SUCCESS("The goalie has succeeded! Positive reward for the learner.  ");
+#endif
+                    // A reward has been received: re-enable learning
+                    state = learning;
+                    // Clear the pending reward
+                    if(!diveHandle.rewardAck)
+                        diveHandle.rewardAck = true;
+
+                }
             }
 
             // Use the reward to adjust the algorithm parameters
             if( state == learning )
-            {
-                // adjust PG parameters wrt reward
-            }
+                learner->updateParams(rewardHistory);
 
-#ifdef DEBUG_MODE
-            SPQR_INFO( "Estimated overall time to dive and recover position: " <<
-                      computeDiveAndRecoverTime( (learner->getCoeffs()).at(0), (learner->getCoeffs()).at(1) ) );
-#endif
             // Compute the dive time using the current coefficients as T = alpha2 * (alpha1*T_PAPO - T_dive)
             float diveTime = (learner->getCoeffs()).at(1) * ( (learner->getCoeffs()).at(0) * tBall2Goal - tDive );
+
+#ifdef DIVEHANDLER_DEBUG
+            SPQR_INFO( "Estimated overall time to dive and recover position: " <<
+                      computeDiveAndRecoverTime( (learner->getCoeffs()).at(0), (learner->getCoeffs()).at(1) ) );
+            SPQR_INFO("Suggested dive in " << diveTime << " ms. ");
+#endif
+
             // Update the DiveHandle
-            if (diveTime >= 0)
+            if (diveTime > 0.0)
                 diveHandle.diveTime = diveTime;
             else
                 diveHandle.diveTime = -1.0;
 
-#ifdef DEBUG_MODE
-            if (diveHandle.diveTime > 0)
-            {SPQR_INFO("Dive in " << diveHandle.diveTime << " ms! ");}
-            else if (diveHandle.diveTime == 0)
-            {SPQR_INFO("Dive now! ");}
-            else
-            {SPQR_INFO("Stay still... ");}
+#ifdef DIVEHANDLER_TRAINING
+            if (diveTime > 0.0)
+            {
+                if(diveHandle.diveTime < SPQR::GOALIE_DIVE_TIME_TOLERANCE)
+                    SPQR_INFO("Dive now! ");
+            }
 #endif
 
         }
@@ -373,5 +655,4 @@ void DiveHandler::update(DiveHandle& diveHandle)
             diveHandle.diveType = diveType;
         }
     }
-
 }
