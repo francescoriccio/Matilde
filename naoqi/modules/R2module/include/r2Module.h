@@ -75,9 +75,11 @@ private:
     // Common base kinematic chain (left foot to body center)
     Rmath::KinChain* theKinChainLeftLeg;
     // All initialized tasks
-    std::map<std::string, Task*> taskMap;
+    std::map <std::string, Task*> taskMap;
     // Stack of tasks currently active
-    std::set<TaskBase*, taskCmp> taskSet;
+    std::set<Task*, taskCmp> taskSet;
+    // Tasks respective positions within the whole kinematic chain
+    std::map <Task*, int> taskLoc;
 
 public:
 

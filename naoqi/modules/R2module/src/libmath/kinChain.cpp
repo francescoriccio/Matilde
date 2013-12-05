@@ -240,15 +240,16 @@ void Rmath::KinChain::differential(int base, int ee, Eigen::MatrixXd* J, int tas
 
      // Collect all joint positions within the chain
      std::vector<int> q_indices;
-     int i = 0;
      std::map<int, Rmath::KinChain::Joint>::iterator selector = joints.begin();
+
      // Iterate over the joint container
      while(selector != joints.end())
      {
          // Skip joints out of the desired range
-         if ( (i >= base) && (i <= ee) )
-             q_indices.push_back(selector->first);
-         ++selector; ++i;
+         if ( selector->first >= base && selector->first <= ee )
+             q_indices.push_back(selector->first -base);
+
+         ++selector;
      }
 
      // Compute the Jacobian matrix

@@ -92,7 +92,7 @@ void ConfigReader::dhReader(std::string dh_file_path)
         else if (tokens.at(0) == "T")
         {
             Rmath::Transform* transl = new Rmath::Translation( to_double(tokens.at(1)),
-                                                               to_double(tokens.at(2)) ,
+                                                               to_double(tokens.at(2)),
                                                                to_double(tokens.at(3)) );
             transformations.push_back(transl);
         }
@@ -105,10 +105,11 @@ void ConfigReader::dhReader(std::string dh_file_path)
                                                          valueReader(tokens.at(4)) );
             transformations.push_back(rot);
         }
+
+        if (tokens.at(0) == "}") break;
     }
     cfg_dh.close();
 }
-
 
 void ConfigReader::paramsReader(std::string params_file_path)
 {

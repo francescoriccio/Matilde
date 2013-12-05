@@ -117,6 +117,8 @@ Eigen::Matrix4d homY(double a, const Eigen::Vector3d& shift);
 void Hz(double a, const Eigen::Vector3d& shift, Eigen::Matrix4d* mz);
 Eigen::Matrix4d homZ(double a, const Eigen::Vector3d& shift);
 
+Eigen::Matrix4d hTranslation(const Eigen::Vector3d& shift);
+
 /*
  * Compute the Moore-Penrose pseudo-inversion of matrix 'm' using SVD decomposition.
  * Optional value is the default tolerance for the singular values of 'm'.

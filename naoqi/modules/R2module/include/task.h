@@ -108,14 +108,39 @@ private:
     // The task kinematic chain
     Rmath::KinChain* theKinChain;
 
+    // Toggle positioning/velocity task
+    bool positioningActive;
+    // Toggle joint space/cartesian space control
+    bool jointControlActive;
+
+    // Discrete path to desired pose
+    std::vector<Eigen::VectorXd> path;
+    // Current progress in the path
+    int path_currentStep;
+
 public:
     // Constructor
     Task(int m, int n,  int _priority, ConfigReader theConfigReader, int _base, int _ee);
     // Destructor
     ~Task();
 
+    // Retrieve the current end-effector pose
+    Eigen::VectorXd getCurrentPose(const Eigen::Matrix4d& baseTransform = Eigen::Matrix4d::Identity()) const;
+    // Set a desired pose in the task space
+    void setDesiredPose(const Eigen::VectorXd& dp, int n_controlPoints = 1,
+                        const Eigen::Matrix4d& baseTransform = Eigen::Matrix4d::Identity());
+    // Set a desired configuration in the joint space
+    void setDesiredConfiguration(const Eigen::VectorXd& desiredConf, int n_controlPoints);
+    // Reset the current target pose (either in joint or task space)
+    inline void resetDesiredPose()
+    {
+        positioningActive = false;
+        path.clear();
+    }
+
     // Update function
-    void update(const Eigen::VectorXd& q, double K, const Eigen::VectorXd& desiredPose, const Eigen::VectorXd& desiredVel);
+    void update(const Eigen::VectorXd& q, const Eigen::VectorXd& desiredVel,
+                double K = 1.0, const Eigen::Matrix4d& baseTransform = Eigen::Matrix4d::Identity());
 };
 
 #endif

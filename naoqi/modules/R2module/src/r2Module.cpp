@@ -11,13 +11,13 @@
 
 /**
   TODO:
-    - check transformations
+    - force soth convergence (stop criteria)
     - task formalization
 */
 
 #define INFO(x) std::cerr << "\033[22;34;1m" << "[r2module] " << x << "\033[0m" << std::endl;
-//#define DEBUG_MODE
-#define TEST_KINCHAIN
+#define DEBUG_MODE
+//#define TEST_KINCHAIN
 
 // Nao joints number
 #define JOINTS_NUM 24
@@ -37,7 +37,7 @@ namespace AL
 {
 
 // Config (.cfg) files directory and paths
-static const std::string CONFIG_PATH = "/../config/";
+static const std::string CONFIG_PATH = "../config/";
 static const std::string JOINT_BOUNDS_CFG = "joints_params.cfg";
 static const std::string LEFT_LEG_CFG = "dh_leftLeg.cfg";
 static const std::string LEFT_ARM_CFG = "dh_leftArm.cfg";
@@ -198,27 +198,39 @@ void R2Module::init()
   INFO("Initializing: retrieving joint limits... ");
 #endif
 
-  /* ------------------------------ Other tasks: head (priority = 1), left arm (priority = 2) ------------------------------ */
+  /* ------------------------------ Other tasks: head (priority = 2), left arm (priority = 1) ------------------------------ */
 
   // Extract joint bounds from the configuration file
   ConfigReader headConfig( CONFIG_PATH + HEAD_CFG, CONFIG_PATH + JOINT_BOUNDS_CFG );
   // Task initialization
-  Task* head = new Task(3, HEAD, 1, headConfig, 0, HEAD);
+  Task* head = new Task(3, HEAD, 2, headConfig, 0, HEAD);
 
   // Extract joint bounds from the configuration file
-  ConfigReader pointingConfig( CONFIG_PATH + LEFT_ARM_CFG, CONFIG_PATH + JOINT_BOUNDS_CFG );
+  ConfigReader LpointingConfig( CONFIG_PATH + LEFT_ARM_CFG, CONFIG_PATH + JOINT_BOUNDS_CFG );
   // Task initialization
-  Task* pointing = new Task(3, L_ARM, 2, pointingConfig, HEAD + R_ARM, HEAD + R_ARM + L_ARM);
+  Task* Lpointing = new Task(3, L_ARM, 1, LpointingConfig, HEAD + R_ARM, HEAD + R_ARM + L_ARM);
+
+  // Extract joint bounds from the configuration file
+  ConfigReader RpointingConfig( CONFIG_PATH + RIGHT_ARM_CFG, CONFIG_PATH + JOINT_BOUNDS_CFG );
+  // Task initialization
+  Task* Rpointing = new Task(3, R_ARM, 3, RpointingConfig, HEAD, HEAD + R_ARM);
 
   // Push every task into the task map
   taskMap.insert( std::pair<std::string, Task*> ("Head task", head) );
-  taskMap.insert( std::pair<std::string, Task*> ("Left arm task", pointing) );
+  taskMap.insert( std::pair<std::string, Task*> ("Left arm task", Lpointing) );
+  taskMap.insert( std::pair<std::string, Task*> ("Right arm task", Rpointing) );
+
+  // Storing tasks location with respect to the whole Nao kinematic chain
+  taskLoc.insert( std::pair<Task*,int> (head, 0) );
+  taskLoc.insert( std::pair<Task*,int> (Lpointing, HEAD + R_ARM) );
+  taskLoc.insert( std::pair<Task*,int> (Rpointing, HEAD) );
 
 #ifdef DEBUG_MODE
   INFO("Initializing tasks: ");
   INFO("- Joint limits, with priority " << jointLimits->getPriority());
   INFO("- Head task, with priority " << head->getPriority());
-  INFO("- Left arm task, with priority " << pointing->getPriority());
+  INFO("- Left arm task, with priority " << Lpointing->getPriority());
+  INFO("- Right arm task, with priority " << Rpointing->getPriority());
 #endif
   }
 
@@ -338,10 +350,62 @@ void R2Module::motion()
     INFO("Executing main loop...");
 #endif
 
+    // Shift CoM-left arm
+    Eigen::Vector3d CoM_LA;
+    CoM_LA << 0.0, 98.0, 100.0;
+    // Shift CoM-right arm
+    Eigen::Vector3d CoM_RA;
+    CoM_RA << 0.0, -98.0, 100.0;
+
+    // Defining the desired pose vectors in the task space
+    Eigen::VectorXd desiredHeadPose(3), desiredLHandPose(3), desiredRHandPose(3);
+    Eigen::VectorXd desiredLHandConf(L_ARM), desiredRHandConf(R_ARM);
+
+    //desiredHeadPose << 53.9, 0.0, 194.4; // zero-position HEAD
+    desiredHeadPose << 0.0, 100.0, 0.0;
+
+//    desiredLHandPose << 218.7, 133, 112.31; // zero-position L ARM
+    desiredLHandPose << -15.0, 316.0, 112.31; // point-left L ARM
+//    desiredLHandPose <<  0, -100, -100; // point L ARM
+//    desiredLHandPose << -15.0, 98.0, 329.01;
+    desiredLHandConf = Eigen::VectorXd::Zero(desiredLHandConf.size());
+    desiredLHandConf(1) = M_PI/2;
+//    desiredLHandConf(3) = -M_PI/2;
+
+//    desiredLHandPose << 250, -250, 250; // +X
+//    desiredLHandPose << 0.0, 250.0, 0.0; // -Y
+//    desiredLHandPose << 0.0, 0.0, 250; // +Z
+
+
+//    desiredRHandPose << 218.7, -133, 112.31; //zero-position R ARM
+    desiredRHandPose << 15.0, -316.0, 112.31; //point-right R ARM
+//    desiredRHandPose <<  0, -100, -100; // point R ARM
+//    desiredRHandPose << -15.0, -98.0, 329.01;
+    desiredRHandConf = Eigen::VectorXd::Zero(desiredRHandConf.size());
+    desiredRHandConf(1) = -M_PI/2;
+//    desiredRHandConf(3) = M_PI/2;
+
+//    desiredRHandPose << 250, -250, -250; // +X
+//    desiredRHandPose << 0.0, -250.0, 0.0; // -Y
+//    desiredRHandPose << 0.0, 0.0, 250; // +Z
+
+    taskMap["Head task"]->setDesiredPose(desiredHeadPose, 1, Rmath::hTranslation(Eigen::Vector3d::Zero()));
+//    taskMap["Left arm task"]->setDesiredPose(desiredLHandPose, 15, Rmath::homX(-M_PI/2, CoM_LA) );
+    taskMap["Left arm task"]->setDesiredConfiguration(desiredLHandConf, 3);
+//    taskMap["Right arm task"]->setDesiredPose(desiredRHandPose, 15, Rmath::homX(-M_PI/2, CoM_RA) );
+    taskMap["Right arm task"]->setDesiredConfiguration(desiredRHandConf, 3);
+
+#ifdef DEBUG_MODE
+    INFO("Desired head position in space: [\n" << desiredHeadPose << "]");
+    INFO("Desired left hand position in space: [\n" << desiredLHandPose << "]");
+    INFO("Desired right hand position in space: [\n" << desiredRHandPose << "]");
+#endif
+
     // Turn tasks to active
     jointLimits->activate();
     taskMap["Head task"]->activate();
     taskMap["Left arm task"]->activate();
+    taskMap["Right arm task"]->activate();
 
     // Main loop
     while(true)
@@ -374,6 +438,8 @@ void R2Module::motion()
         INFO("Initializing HQP solver...");
         INFO( "Active tasks: " << (taskSet.size()+1) << " out of " << (taskMap.size()+1) );
         INFO("Generating stack...");
+
+        int task_i = 2;
 #endif
         // Set up the hierarchy
         std::vector<Eigen::MatrixXd> A;
@@ -382,12 +448,25 @@ void R2Module::motion()
         A.push_back(jointLimits->constraintMatrix());
         b.push_back(jointLimits->vectorBounds());
         // All the remaining tasks (in descending order of priority)
-        std::set<TaskBase*>::iterator updater = taskSet.begin();
+        std::set<Task*>::iterator updater = taskSet.begin();
         while( updater != taskSet.end() )
         {
-            A.push_back((*updater)->constraintMatrix());
+            // Current task constraint matrix (restricted to the joint involved)
+            Eigen::MatrixXd currentA_task = (*updater)->constraintMatrix();
+
+            // Rewrite the task constraint matrix with the complete joint configuration
+            Eigen::MatrixXd currentA = Eigen::MatrixXd::Zero( currentA_task.rows(), JOINTS_NUM );
+            // The task constraint matrix is the only non-zero block in A
+            currentA.block( 0, taskLoc[*updater], currentA_task.rows(), currentA_task.cols() ) = currentA_task;
+
+            A.push_back(currentA);
             b.push_back((*updater)->vectorBounds());
             ++updater;
+
+#ifdef DEBUG_MODE
+            INFO("Task n. " << task_i << ", constraint matrix (enlarged):\n" << currentA);
+            ++task_i;
+#endif
         }
         hsolver.pushBackStages(A, b);
 
@@ -399,23 +478,24 @@ void R2Module::motion()
         INFO("Configuring HQP solver...");
         INFO("Start active search... ");
 #endif
-//        // Run the solver
-//        hsolver.activeSearch(qdot);
-//        // Trim ssolution
-//        Rmath::trim(&qdot);
+        // Run the solver
+        hsolver.activeSearch(qdot);
+        // Trim ssolution
+        Rmath::trim(&qdot);
 
-//#ifdef DEBUG_MODE
-//        INFO("Done.");
-//        INFO("Active set: ");
-//        hsolver.showActiveSet(std::cerr);
-//        INFO("Solution: [\n" << qdot << "]");
-//#endif
+#ifdef DEBUG_MODE
+        INFO("Done.");
+        INFO("Active set: ");
+        hsolver.showActiveSet(std::cerr);
+        INFO("Solution: [\n" << qdot << "]");
+#endif
 
 #ifdef TEST_KINCHAIN
         qdot = Eigen::VectorXd::Zero(q.size());
         Eigen::MatrixXd J_TMP_pinv;
         Rmath::pseudoInverse(J_TMP, &J_TMP_pinv);
-        qdot.segment<L_ARM>(HEAD + R_ARM) = J_TMP_pinv * r;
+
+        qdot.segment<L_ARM>(HEAD + R_ARM /*+ 1*/) = J_TMP_pinv * r;
         INFO("Solution: [\n" << qdot << "]");
 #endif
 
@@ -433,9 +513,16 @@ Eigen::VectorXd R2Module::getConfiguration()
     // Store the resulting values in a Eigen::VectorXd
     Eigen::VectorXd currentConfiguration(jointID.size());
 
+    AL::ALValue jointId, angles;
+
     // Use Naoqi ID for each joint to request the joint current measured value
     for(int i=0; i <jointID.size(); ++i)
-        currentConfiguration(i) = ( fMotionProxy->getAngles(jointID.at(i), true) ).at(0);
+        jointId.arrayPush( jointID.at(i) );
+
+    angles = fMotionProxy->getAngles( jointId, true );
+
+    for(int i=0; i <jointID.size(); ++i)
+        currentConfiguration(i) = angles[i];
 
     return currentConfiguration;
 }
@@ -471,51 +558,59 @@ void R2Module::updateConstraints(const Eigen::VectorXd& q)
     INFO("Joint configuration:");
     for(unsigned int i=0; i<q_TMP.size(); ++i)
         INFO(jointID.at(HEAD + R_ARM + i) << "\t" << q_TMP(i));
+
     theKinChain_TMP->update(q_TMP);
     theKinChain_TMP->forward(&H_TMP);
     theKinChain_TMP->differential(&J_TMP, 3);
+
     INFO("Direct kinematics transform: ");
     INFO(std::endl << H_TMP);
     INFO("Jacobian (linear velocities only): ");
     INFO(std::endl << J_TMP);
 #endif
 
-    /* -------------------- Head and left arm task update --------------------*/
+    /* -------------------- Head and arms tasks update --------------------*/
 
-    // Defining the desired pose vectors in the task space
-    Eigen::VectorXd desiredHeadPose(3), desiredLHandPose(3);
+    // Shift CoM-left arm
+    Eigen::Vector3d CoM_LA;
+    CoM_LA << 0.0, 98.0, 100.0;
+    // Shift CoM-right arm
+    Eigen::Vector3d CoM_RA;
+    CoM_RA << 0.0, -98.0, 100.0;
 
-    //desiredHeadPose << 53.9, 0.0, 194.4; // zero-position HEAD
-    desiredHeadPose << -20.0, 0.0, 194.4;
-
-    //desiredLHandPose << 218.7, 133, 112.31; // zero-position L ARM
-//    desiredLHandPose << 0.0, 329.01, 112.31; // point-left L ARM
-    desiredLHandPose << 15.1, 112.31, 316.0; // point-up L ARM
-
-    //desiredRHandPose << 218.7, -133, 112.31, 0.0, 0.0, 0.0; //zero-position R ARM
-    //desiredRHandPose <<-15, -329.01, 112.31, 0.0, 0.0, 0.0; //point-right R ARM
 
     // Head task update
-    ( taskMap["Head task"] )->update( q.head(HEAD), K_HEAD, desiredHeadPose, Eigen::VectorXd::Zero(3) );
+    ( taskMap["Head task"] )->update( q.head(HEAD), Eigen::VectorXd::Zero(3), K_HEAD, Rmath::hTranslation(Eigen::Vector3d::Zero()));
 
 #ifdef DEBUG_MODE
-    INFO("Desired head position in space: [\n" << desiredHeadPose << "]");
     INFO("Head task constraint equation: ");
     INFO(std::endl << *( taskMap["Head task"] ) );
 #endif
 
     // Left arm task update
-    ( taskMap["Left arm task"] )->update( q.segment<L_ARM>(HEAD+R_ARM), K_HEAD, desiredLHandPose, Eigen::VectorXd::Zero(3) );
+//    ( taskMap["Left arm task"] )->update( q.segment<L_ARM>(HEAD+R_ARM), Eigen::VectorXd::Zero(3), K_HEAD, Rmath::homX(-M_PI/2, CoM_LA) );
+    ( taskMap["Left arm task"] )->update( q.segment<L_ARM>(HEAD+R_ARM), Eigen::VectorXd::Zero(L_ARM), K_HEAD);
 
 #ifdef DEBUG_MODE
-    INFO("Desired left hand position in space: [\n" << desiredLHandPose << "]");
     INFO("Left arm task constraint equation: ");
     INFO(std::endl << *( taskMap["Left arm task"] ) );
 #endif
 
+    // Right arm task update
+//    ( taskMap["Right arm task"] )->update( q.segment<R_ARM>(HEAD), Eigen::VectorXd::Zero(3), K_HEAD, Rmath::homX(-M_PI/2, CoM_RA) );
+    ( taskMap["Right arm task"] )->update( q.segment<R_ARM>(HEAD), Eigen::VectorXd::Zero(R_ARM), K_HEAD);
+
+#ifdef DEBUG_MODE
+    INFO("Right arm task constraint equation: ");
+    INFO(std::endl << *( taskMap["Right arm task"] ) );
+#endif
+
 #ifdef TEST_KINCHAIN
     INFO("Desired left hand position in space: [\n" << desiredLHandPose << "]");
-    r = K_HEAD * ( desiredLHandPose - H_TMP.topRightCorner(3,1) );
+//    r = K_HEAD * ( desiredLHandPose - H_TMP.topRightCorner(3,1) ) + Eigen::Vector3d::UnitZ()*100;
+    r = ( Eigen::Vector3d::UnitX()*100 +
+          Eigen::Vector3d::UnitY()*100 +
+          Eigen::Vector3d::UnitZ()*100 );
     INFO("New target velocity:\n[" << r << "]");
 #endif
 
@@ -526,6 +621,7 @@ void R2Module::updateConstraints(const Eigen::VectorXd& q)
  */
 bool R2Module::updateConfiguration(const Eigen::VectorXd& delta_q)
 {
+
 #ifdef TEST_KINCHAIN
     Eigen::VectorXd delta_q_ = delta_q;
 #endif
