@@ -223,9 +223,7 @@ TaskBase TaskBase::operator--(int)
     return tmp_tb;
 }
 
-
-/** ---------- TaskBase ---------- */
-
+/** ---------- Task ---------- */
 
 /*
  * Class constructor. Input arguments are:
@@ -255,7 +253,6 @@ Task::~Task()
     if(theKinChain) delete theKinChain;
 }
 
-
 Eigen::VectorXd Task::getCurrentPose(const Eigen::Matrix4d& baseTransform) const
 {
     Eigen::Matrix4d H_chain;
@@ -273,7 +270,6 @@ Eigen::VectorXd Task::getCurrentPose(const Eigen::Matrix4d& baseTransform) const
 
     return currentPose;
 }
-
 
 void Task::setDesiredPose(const Eigen::VectorXd& dp, int n_controlPoints, const Eigen::Matrix4d& baseTransform)
 {
@@ -318,11 +314,53 @@ void Task::setDesiredConfiguration(const Eigen::VectorXd& desiredConf, int n_con
     if (!jointControlActive) jointControlActive = true;
 }
 
+void Task::circularPathGenerator( const Eigen::VectorXd& dp, float z_shift, int n_controlPoints, float radius, int n,
+                            const Eigen::Matrix4d& baseTransform )
+{
+    // Re-computing direct kinematics
+    Eigen::Matrix4d H_chain;
+    theKinChain->forward((&H_chain));
+    H_chain = baseTransform * H_chain;
+
+//    Eigen::Vector3d initialTranslation;
+//    initialTranslation << 218.7, 113, 112.31;
+//    Eigen::Vector3d transEEd = dp.head(3) - initialTranslation;
+//    INFO("desired vector: \n" << dp.head(3));
+//    INFO("current vector: \n" << H_chain.topRightCorner(3,1));
+//    /* very beginning Nao left hand translation
+//        218.7, 113, 112.31
+//    */
+//    INFO("translation vector: \n" << transEEd);
+
+    for (float i = 0.0; i < n*2*M_PI; i+= 2*M_PI/n_controlPoints)
+    {
+        Eigen::VectorXd ee_desiredPose_handframe(4);
+        ee_desiredPose_handframe << /*transEEd(0)+*/ radius*cos(i),
+                                    /*transEEd(1)+*/ radius*sin(i),
+                                    /*transEEd(2)+*/ z_shift,
+                                    1.0;
+        Rmath::trim(&ee_desiredPose_handframe);
+
+        Eigen::VectorXd ee_desiredPose_CoMframe(dp.size());
+        if(dp.size() > 3)
+            ee_desiredPose_CoMframe <<  (H_chain * ee_desiredPose_handframe).head(3), dp(3), dp(4), dp(5);
+        else
+            ee_desiredPose_CoMframe <<  (H_chain * ee_desiredPose_handframe).head(3);
+
+        Rmath::trim(&ee_desiredPose_CoMframe);
+
+        path.push_back( ee_desiredPose_CoMframe );
+    }
+
+    path_currentStep = 0;
+    positioningActive = true;
+    if (jointControlActive) jointControlActive = false;
+}
+
 /*
  * Task update function: update the constraint matrix A=A(q) with a new value of q and replace the target vector
  * with a proportional/derivative control law of the type K*POSE_ERROR + DESIRED_VELOCITY.
  */
-
 void Task::update( const Eigen::VectorXd& q, const Eigen::VectorXd& desiredVel, double K, const Eigen::Matrix4d& baseTransform )
 {
     // Dimensions must be consistent

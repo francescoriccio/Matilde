@@ -14,6 +14,7 @@
 #include <vector>
 #include <map>
 #include <Eigen/Core>
+#include <Eigen/LU>
 #include <soth/HCOD.hpp>
 
 #include "configReader.h"

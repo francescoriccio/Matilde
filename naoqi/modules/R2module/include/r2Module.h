@@ -22,6 +22,7 @@
 #include <alproxies/almotionproxy.h>
 #include <alproxies/alrobotpostureproxy.h>
 #include <alproxies/alvideodeviceproxy.h>
+#include <alproxies/alredballtrackerproxy.h>
 
 // Soth includes
 #include <soth/HCOD.hpp>
@@ -53,6 +54,7 @@ private:
     boost::shared_ptr<AL::ALVideoDeviceProxy> fCamProxy;
     boost::shared_ptr<AL::ALMotionProxy> fMotionProxy;
     boost::shared_ptr<AL::ALRobotPostureProxy> fPostureProxy;
+    boost::shared_ptr<AL::ALRedBallTrackerProxy> fBallTrackerProxy;
 
     // Client name for the Video Device.
     std::string fVideoClientName;
@@ -103,6 +105,11 @@ public:
     static void* visionTh(R2Module* module){ module->vision(); return 0; }
     void motion();
     void vision();
+
+    void closeHand(const std::string& handID);
+    void openHand(const std::string& handID);
+
+    Eigen::Vector3d getRedBallPosition();
 
     // Retrieve the current joint configuration
     Eigen::VectorXd getConfiguration();

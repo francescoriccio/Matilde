@@ -8,6 +8,7 @@
 
 #include "r2Module.h"
 #include "configReader.h"
+#include "configParams.h"
 
 /**
   TODO:
@@ -16,42 +17,12 @@
 */
 
 #define INFO(x) std::cerr << "\033[22;34;1m" << "[r2module] " << x << "\033[0m" << std::endl;
-#define DEBUG_MODE
+//#define DEBUG_MODE
 //#define TEST_KINCHAIN
 
-// Nao joints number
-#define JOINTS_NUM 24
-// Nao kinematic chain sizes
-#define HEAD 2
-#define R_ARM 5
-#define L_ARM 5
-#define R_LEG 6
-#define L_LEG 6
-
-// Position task control gain
-#define K_HEAD 1
-// Discrete integration time step
-#define TIME_STEP 1
 
 namespace AL
 {
-
-// Config (.cfg) files directory and paths
-static const std::string CONFIG_PATH = "../config/";
-static const std::string JOINT_BOUNDS_CFG = "joints_params.cfg";
-static const std::string LEFT_LEG_CFG = "dh_leftLeg.cfg";
-static const std::string LEFT_ARM_CFG = "dh_leftArm.cfg";
-static const std::string RIGHT_LEG_CFG = "dh_rightLeg.cfg";
-static const std::string RIGHT_ARM_CFG = "dh_rightArm.cfg";
-static const std::string HEAD_CFG = "dh_head.cfg";
-
-#ifdef TEST_KINCHAIN
-static Rmath::KinChain* theKinChain_TMP;
-static Eigen::Matrix4d H_TMP;
-static Eigen::MatrixXd J_TMP;
-static Eigen::VectorXd q_TMP(L_ARM);
-static Eigen::Vector3d r;
-#endif
 
 /*
  * Module constructor using Naoqi API methods.
@@ -122,13 +93,12 @@ void R2Module::init()
   // Initialize the base kinematic chain (from Nao's left foot to body center)
   ConfigReader theConfigReader( CONFIG_PATH + LEFT_LEG_CFG, CONFIG_PATH + JOINT_BOUNDS_CFG );
   theConfigReader.storeJointsID(&jointID);
-  theKinChainLeftLeg = new Rmath::KinChain( theConfigReader, HEAD + R_ARM + L_ARM + R_LEG,
-                                            HEAD + R_ARM + L_ARM + R_LEG + L_LEG);
+  theKinChainLeftLeg = new Rmath::KinChain( theConfigReader, LLEG_CHAIN_BEGIN, LLEG_CHAIN_END );
 
 #ifdef TEST_KINCHAIN
   // Initialize the test kinematic chain (left arm)
   ConfigReader theConfigReader_TMP( CONFIG_PATH + LEFT_ARM_CFG, CONFIG_PATH + JOINT_BOUNDS_CFG );
-  theKinChain_TMP = new Rmath::KinChain( theConfigReader_TMP, HEAD + R_ARM, HEAD + R_ARM + L_ARM);
+  theKinChain_TMP = new Rmath::KinChain( theConfigReader_TMP, LARM_CHAIN_BEGIN, LARM_CHAIN_SIZE);
 #endif
 
 #ifdef DEBUG_MODE
@@ -143,6 +113,7 @@ void R2Module::init()
       fCamProxy = boost::shared_ptr<ALVideoDeviceProxy>(new ALVideoDeviceProxy(getParentBroker()));
       fMotionProxy = boost::shared_ptr<ALMotionProxy>(new ALMotionProxy(getParentBroker()));
       fPostureProxy = boost::shared_ptr<ALRobotPostureProxy>(new ALRobotPostureProxy(getParentBroker()));
+      fBallTrackerProxy = boost::shared_ptr<AL::ALRedBallTrackerProxy>(new ALRedBallTrackerProxy(getParentBroker()));
   }
   catch (const AL::ALError& e)
   {
@@ -188,7 +159,7 @@ void R2Module::init()
   theConfigReader.extractJointBounds(&jointBounds);
 
   // Convert joint ranges into velocity bound estimates
-  Eigen::MatrixXd velBounds(JOINTS_NUM,2);
+  Eigen::MatrixXd velBounds(JOINTS_NUM, 2);
   posBound2velBound(jointBounds, getConfiguration(), &velBounds);
 
   // Actual task initialization
@@ -203,17 +174,20 @@ void R2Module::init()
   // Extract joint bounds from the configuration file
   ConfigReader headConfig( CONFIG_PATH + HEAD_CFG, CONFIG_PATH + JOINT_BOUNDS_CFG );
   // Task initialization
-  Task* head = new Task(3, HEAD, 2, headConfig, 0, HEAD);
+  Task* head = new Task(HEAD_TASK_DIM, HEAD_CHAIN_SIZE, HEAD_TASK_PRIORITY, headConfig,
+                        HEAD_CHAIN_BEGIN, HEAD_CHAIN_END);
 
   // Extract joint bounds from the configuration file
   ConfigReader LpointingConfig( CONFIG_PATH + LEFT_ARM_CFG, CONFIG_PATH + JOINT_BOUNDS_CFG );
   // Task initialization
-  Task* Lpointing = new Task(3, L_ARM, 1, LpointingConfig, HEAD + R_ARM, HEAD + R_ARM + L_ARM);
+  Task* Lpointing = new Task(LARM_TASK_DIM, LARM_CHAIN_SIZE, LARM_TASK_PRIORITY, LpointingConfig,
+                             LARM_CHAIN_BEGIN, LARM_CHAIN_END);
 
   // Extract joint bounds from the configuration file
   ConfigReader RpointingConfig( CONFIG_PATH + RIGHT_ARM_CFG, CONFIG_PATH + JOINT_BOUNDS_CFG );
   // Task initialization
-  Task* Rpointing = new Task(3, R_ARM, 3, RpointingConfig, HEAD, HEAD + R_ARM);
+  Task* Rpointing = new Task(RARM_TASK_DIM, RARM_CHAIN_SIZE, RARM_TASK_PRIORITY, RpointingConfig,
+                             RARM_CHAIN_BEGIN, RARM_CHAIN_END);
 
   // Push every task into the task map
   taskMap.insert( std::pair<std::string, Task*> ("Head task", head) );
@@ -221,9 +195,9 @@ void R2Module::init()
   taskMap.insert( std::pair<std::string, Task*> ("Right arm task", Rpointing) );
 
   // Storing tasks location with respect to the whole Nao kinematic chain
-  taskLoc.insert( std::pair<Task*,int> (head, 0) );
-  taskLoc.insert( std::pair<Task*,int> (Lpointing, HEAD + R_ARM) );
-  taskLoc.insert( std::pair<Task*,int> (Rpointing, HEAD) );
+  taskLoc.insert( std::pair<Task*,int> (head, HEAD_CHAIN_BEGIN) );
+  taskLoc.insert( std::pair<Task*,int> (Lpointing, LARM_CHAIN_BEGIN) );
+  taskLoc.insert( std::pair<Task*,int> (Rpointing, RARM_CHAIN_BEGIN) );
 
 #ifdef DEBUG_MODE
   INFO("Initializing tasks: ");
@@ -322,6 +296,7 @@ void R2Module::getCurrentFrame()
  */
 void R2Module::vision()
 {
+//    fBallTrackerProxy->startTracker();
     // Wait a while before starting acquisition
     qi::os::sleep(1.5);
     // Main loop
@@ -329,7 +304,9 @@ void R2Module::vision()
     {
         qi::os::msleep(100);
         /* WORK IN PROGRESS */
+//        INFO("ball position w.r.t. CoM: \n"<<getRedBallPosition()); /*TODEBUG*/
     }
+//    fBallTrackerProxy->stopTracker();
 }
 
 /*
@@ -350,50 +327,59 @@ void R2Module::motion()
     INFO("Executing main loop...");
 #endif
 
-    // Shift CoM-left arm
-    Eigen::Vector3d CoM_LA;
-    CoM_LA << 0.0, 98.0, 100.0;
     // Shift CoM-right arm
     Eigen::Vector3d CoM_RA;
-    CoM_RA << 0.0, -98.0, 100.0;
+    CoM_RA << COM_RARM_SHIFT_X, COM_RARM_SHIFT_Y, COM_RARM_SHIFT_Z;
+    // Shift CoM-left arm
+    Eigen::Vector3d CoM_LA;
+    CoM_LA << COM_LARM_SHIFT_X, COM_LARM_SHIFT_Y, COM_LARM_SHIFT_Z;
 
     // Defining the desired pose vectors in the task space
-    Eigen::VectorXd desiredHeadPose(3), desiredLHandPose(3), desiredRHandPose(3);
-    Eigen::VectorXd desiredLHandConf(L_ARM), desiredRHandConf(R_ARM);
+    Eigen::VectorXd desiredHeadPose(HEAD_TASK_DIM), desiredLHandPose(LARM_TASK_DIM), desiredRHandPose(RARM_TASK_DIM);
+    Eigen::VectorXd desiredHeadPosition(3), desiredRHandPosition(3), desiredLHandPosition(3);
+    Eigen::VectorXd desiredHeadOrientation(3), desiredRHandOrientation(3), desiredLHandOrientation(3);
 
-    //desiredHeadPose << 53.9, 0.0, 194.4; // zero-position HEAD
-    desiredHeadPose << 0.0, 100.0, 0.0;
+    // head position in 3D space
+    desiredHeadPosition << HEAD_DESIRED_X, HEAD_DESIRED_Y, HEAD_DESIRED_Z;
+    // head orientation in 3D space
+    desiredHeadOrientation << HEAD_DESIRED_ROLL, HEAD_DESIRED_PITCH, HEAD_DESIRED_YAW;
+    // Right arm position in 3D space
+    desiredRHandPosition << RARM_DESIRED_X, RARM_DESIRED_Y, RARM_DESIRED_Z;
+    // Right arm orientation in 3D space
+    desiredRHandOrientation << RARM_DESIRED_ROLL, RARM_DESIRED_PITCH, RARM_DESIRED_YAW;
+    // left arm position in 3D space
+    desiredLHandPosition << LARM_DESIRED_X, LARM_DESIRED_Y, LARM_DESIRED_Z;
+    // left arm orientation in 3D space
+    desiredLHandOrientation << LARM_DESIRED_ROLL, LARM_DESIRED_PITCH, LARM_DESIRED_YAW;
 
-//    desiredLHandPose << 218.7, 133, 112.31; // zero-position L ARM
-    desiredLHandPose << -15.0, 316.0, 112.31; // point-left L ARM
-//    desiredLHandPose <<  0, -100, -100; // point L ARM
-//    desiredLHandPose << -15.0, 98.0, 329.01;
-    desiredLHandConf = Eigen::VectorXd::Zero(desiredLHandConf.size());
-    desiredLHandConf(1) = M_PI/2;
-//    desiredLHandConf(3) = -M_PI/2;
+    if( HEAD_TASK_DIM > 3 )
+        desiredHeadPose << desiredHeadPosition, desiredHeadOrientation.head(HEAD_TASK_DIM-3);
+    else
+        desiredHeadPose << desiredHeadPosition.head(HEAD_TASK_DIM);
 
-//    desiredLHandPose << 250, -250, 250; // +X
-//    desiredLHandPose << 0.0, 250.0, 0.0; // -Y
-//    desiredLHandPose << 0.0, 0.0, 250; // +Z
+    if( LARM_TASK_DIM > 3 )
+        desiredLHandPose << desiredLHandPosition, desiredLHandOrientation.head(LARM_TASK_DIM-3);
+    else
+        desiredLHandPose << desiredLHandPosition.head(LARM_TASK_DIM);
 
+    if( RARM_TASK_DIM > 3 )
+        desiredRHandPose << desiredRHandPosition, desiredRHandOrientation.head(RARM_TASK_DIM-3);
+    else
+        desiredRHandPose << desiredRHandPosition.head(RARM_TASK_DIM);
 
-//    desiredRHandPose << 218.7, -133, 112.31; //zero-position R ARM
-    desiredRHandPose << 15.0, -316.0, 112.31; //point-right R ARM
-//    desiredRHandPose <<  0, -100, -100; // point R ARM
-//    desiredRHandPose << -15.0, -98.0, 329.01;
-    desiredRHandConf = Eigen::VectorXd::Zero(desiredRHandConf.size());
-    desiredRHandConf(1) = -M_PI/2;
-//    desiredRHandConf(3) = M_PI/2;
+//    taskMap["Head task"]->setDesiredConfiguration(desiredHeadPose.head(HEAD_TASK_DIM), HEAD_TASK_NSTEPS);
+    taskMap["Head task"]->setDesiredPose(desiredHeadPose.head(HEAD_TASK_DIM), HEAD_TASK_NSTEPS,
+                                         Rmath::hTranslation(Eigen::Vector3d::Zero()));
 
-//    desiredRHandPose << 250, -250, -250; // +X
-//    desiredRHandPose << 0.0, -250.0, 0.0; // -Y
-//    desiredRHandPose << 0.0, 0.0, 250; // +Z
+    taskMap["Left arm task"]->setDesiredPose(desiredLHandPose.head(LARM_TASK_DIM), LARM_TASK_NSTEPS,
+                                             Rmath::homX(-M_PI/2, CoM_LA) );
+//    taskMap["Left arm task"]->circularPathGenerator(desiredLHandPose.head(LARM_TASK_DIM), -70, LARM_TASK_NSTEPS, 100, 3,
+//                                                    Rmath::homX(-M_PI/2, CoM_LA));
 
-    taskMap["Head task"]->setDesiredPose(desiredHeadPose, 1, Rmath::hTranslation(Eigen::Vector3d::Zero()));
-//    taskMap["Left arm task"]->setDesiredPose(desiredLHandPose, 15, Rmath::homX(-M_PI/2, CoM_LA) );
-    taskMap["Left arm task"]->setDesiredConfiguration(desiredLHandConf, 3);
-//    taskMap["Right arm task"]->setDesiredPose(desiredRHandPose, 15, Rmath::homX(-M_PI/2, CoM_RA) );
-    taskMap["Right arm task"]->setDesiredConfiguration(desiredRHandConf, 3);
+//    taskMap["Right arm task"]->setDesiredPose(desiredRHandPose.head(RARM_TASK_DIM), RARM_TASK_NSTEPS,
+//                                              Rmath::homX(-M_PI/2, CoM_RA) );
+    taskMap["Right arm task"]->circularPathGenerator(desiredRHandPose.head(RARM_TASK_DIM), -70, RARM_TASK_NSTEPS, 100, 3,
+                                                     Rmath::homX(-M_PI/2, CoM_RA));
 
 #ifdef DEBUG_MODE
     INFO("Desired head position in space: [\n" << desiredHeadPose << "]");
@@ -407,6 +393,8 @@ void R2Module::motion()
     taskMap["Left arm task"]->activate();
     taskMap["Right arm task"]->activate();
 
+    closeHand("RHand");
+    openHand("LHand");
     // Main loop
     while(true)
     {
@@ -419,7 +407,6 @@ void R2Module::motion()
         for(unsigned int i=0; i<q.size(); ++i)
             INFO(jointID.at(i) << "\t" << q(i));
 #endif
-
         // Update all tasks
         updateConstraints(q);
 
@@ -495,7 +482,7 @@ void R2Module::motion()
         Eigen::MatrixXd J_TMP_pinv;
         Rmath::pseudoInverse(J_TMP, &J_TMP_pinv);
 
-        qdot.segment<L_ARM>(HEAD + R_ARM /*+ 1*/) = J_TMP_pinv * r;
+        qdot.segment<LARM_CHAIN_SIZE>(LARM_CHAIN_BEGIN) = J_TMP_pinv * r;
         INFO("Solution: [\n" << qdot << "]");
 #endif
 
@@ -534,9 +521,9 @@ void R2Module::updateConstraints(const Eigen::VectorXd& q)
 {
     // Updating the base kinematic chain (left foot to body center)
     Eigen::Matrix4d H_base;
-    Eigen::MatrixXd J_base(6, L_LEG);
+    Eigen::MatrixXd J_base(6, LLEG_CHAIN_SIZE);
     // Left leg joints are those on the bottom part of the IDs vector
-    theKinChainLeftLeg->update(q.tail(L_LEG));
+    theKinChainLeftLeg->update(q.tail(LLEG_CHAIN_SIZE));
     // Compute kinematics
     theKinChainLeftLeg->forward(&H_base);
     theKinChainLeftLeg->differential(&J_base);
@@ -554,10 +541,10 @@ void R2Module::updateConstraints(const Eigen::VectorXd& q)
 
 #ifdef TEST_KINCHAIN
     INFO("Updating test kinematic chain (body to left hand): ");
-    q_TMP << q.segment<L_ARM>(HEAD + R_ARM);
+    q_TMP << q.segment<LARM_CHAIN_SIZE>(LARM_CHAIN_BEGIN);
     INFO("Joint configuration:");
     for(unsigned int i=0; i<q_TMP.size(); ++i)
-        INFO(jointID.at(HEAD + R_ARM + i) << "\t" << q_TMP(i));
+        INFO(jointID.at(LARM_CHAIN_BEGIN + i) << "\t" << q_TMP(i));
 
     theKinChain_TMP->update(q_TMP);
     theKinChain_TMP->forward(&H_TMP);
@@ -578,9 +565,9 @@ void R2Module::updateConstraints(const Eigen::VectorXd& q)
     Eigen::Vector3d CoM_RA;
     CoM_RA << 0.0, -98.0, 100.0;
 
-
     // Head task update
-    ( taskMap["Head task"] )->update( q.head(HEAD), Eigen::VectorXd::Zero(3), K_HEAD, Rmath::hTranslation(Eigen::Vector3d::Zero()));
+    ( taskMap["Head task"] )->update( q.head(HEAD_CHAIN_SIZE), Eigen::VectorXd::Zero(HEAD_TASK_DIM), K_HEAD,
+                                      Rmath::hTranslation(Eigen::Vector3d::Zero()));
 
 #ifdef DEBUG_MODE
     INFO("Head task constraint equation: ");
@@ -588,8 +575,9 @@ void R2Module::updateConstraints(const Eigen::VectorXd& q)
 #endif
 
     // Left arm task update
-//    ( taskMap["Left arm task"] )->update( q.segment<L_ARM>(HEAD+R_ARM), Eigen::VectorXd::Zero(3), K_HEAD, Rmath::homX(-M_PI/2, CoM_LA) );
-    ( taskMap["Left arm task"] )->update( q.segment<L_ARM>(HEAD+R_ARM), Eigen::VectorXd::Zero(L_ARM), K_HEAD);
+    ( taskMap["Left arm task"] )->update( q.segment<LARM_CHAIN_SIZE>(LARM_CHAIN_BEGIN), Eigen::VectorXd::Zero(LARM_TASK_DIM),
+                                          K_LARM, Rmath::homX(-M_PI/2, CoM_LA) );
+//    ( taskMap["Left arm task"] )->update( q.segment<LARM_CHAIN_SIZE>(LARM_CHAIN_BEGIN), Eigen::VectorXd::Zero(LARM_CHAIN_SIZE), K_LARM);
 
 #ifdef DEBUG_MODE
     INFO("Left arm task constraint equation: ");
@@ -597,8 +585,9 @@ void R2Module::updateConstraints(const Eigen::VectorXd& q)
 #endif
 
     // Right arm task update
-//    ( taskMap["Right arm task"] )->update( q.segment<R_ARM>(HEAD), Eigen::VectorXd::Zero(3), K_HEAD, Rmath::homX(-M_PI/2, CoM_RA) );
-    ( taskMap["Right arm task"] )->update( q.segment<R_ARM>(HEAD), Eigen::VectorXd::Zero(R_ARM), K_HEAD);
+    ( taskMap["Right arm task"] )->update( q.segment<RARM_CHAIN_SIZE>(RARM_CHAIN_BEGIN), Eigen::VectorXd::Zero(RARM_TASK_DIM),
+                                           K_RARM, Rmath::homX(-M_PI/2, CoM_RA) );
+//    ( taskMap["Right arm task"] )->update( q.segment<RARM_CHAIN_SIZE>(RARM_CHAIN_BEGIN), Eigen::VectorXd::Zero(RARM_CHAIN_SIZE), K_RARM);
 
 #ifdef DEBUG_MODE
     INFO("Right arm task constraint equation: ");
@@ -683,5 +672,54 @@ void R2Module::posBound2velBound( const Eigen::MatrixXd& posBound, const Eigen::
     *velBound = (posBound - currConf)/TIME_STEP;
 }
 
+void R2Module::closeHand(const std::string& handID)
+{
+    if(handID == "both")
+    {
+        fMotionProxy->setStiffnesses("LHand", 1.0);
+        fMotionProxy->setStiffnesses("RHand", 1.0);
+        fMotionProxy->closeHand("LHand");
+        fMotionProxy->closeHand("RHand");
+        fMotionProxy->setStiffnesses("LHand", 0.0);
+        fMotionProxy->setStiffnesses("RHand", 0.0);
+    }
+    else
+    {
+        fMotionProxy->setStiffnesses(handID, 1.0);
+        fMotionProxy->closeHand(handID);
+        fMotionProxy->setStiffnesses(handID, 0.0);
+    }
+
+}
+
+void R2Module::openHand(const std::string& handID)
+{
+    if(handID == "both")
+    {
+        fMotionProxy->setStiffnesses("LHand", 1.0);
+        fMotionProxy->setStiffnesses("RHand", 1.0);
+        fMotionProxy->openHand("LHand");
+        fMotionProxy->openHand("RHand");
+        fMotionProxy->setStiffnesses("LHand", 0.0);
+        fMotionProxy->setStiffnesses("RHand", 0.0);
+    }
+    else
+    {
+        fMotionProxy->setStiffnesses(handID, 1.0);
+        fMotionProxy->openHand(handID);
+        fMotionProxy->setStiffnesses(handID, 0.0);
+    }
+
+}
+
+Eigen::Vector3d R2Module::getRedBallPosition()
+{
+    Eigen::Vector3d ballPosition;
+    ballPosition << fBallTrackerProxy->getPosition().at(0),
+                    fBallTrackerProxy->getPosition().at(1),
+                    fBallTrackerProxy->getPosition().at(2);
+
+    return ballPosition;
+}
 
 } // namespace AL

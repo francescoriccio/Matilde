@@ -138,6 +138,10 @@ public:
         path.clear();
     }
 
+    // design a circular path
+    void circularPathGenerator( const Eigen::VectorXd& dp, float z_shift = 0.0, int n_controlPoints = 1, float radius = 0.0, int n = 1,
+                                const Eigen::Matrix4d& baseTransform = Eigen::Matrix4d::Identity() );
+
     // Update function
     void update(const Eigen::VectorXd& q, const Eigen::VectorXd& desiredVel,
                 double K = 1.0, const Eigen::Matrix4d& baseTransform = Eigen::Matrix4d::Identity());
