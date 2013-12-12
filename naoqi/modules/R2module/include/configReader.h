@@ -29,9 +29,9 @@ static double to_double(std::string s){
 class ConfigReader{
 private:
     std::vector<Rmath::Transform*> transformations;
-    std::vector<double> minBounds;
-    std::vector<double> maxBounds;
-    std::vector<double> zero_pose;
+    std::vector<std::string> kinChainJointIDs;
+
+    std::map<std::string, std::vector<double> > jointParams;
     std::vector<std::string> jointID;
 
     void dhReader(std::string dh_file_path);
@@ -39,11 +39,15 @@ private:
     double valueReader(std::string _val);
 
 public:
-    ConfigReader(std::string dh_file_path, std::string params_file_path = "");
+    ConfigReader(std::string params_file_path);
 
-    void storeJointsID(std::vector<std::string> *_jointID);
+    void setKinChain(std::string dh_file_path);
 
-    void extractJointParams(std::vector<double>* _min, std::vector<double>* _max, std::vector<double>* _zero_pose, int _i, int _j);
+    void storeJointsID(std::vector<std::string>* _jointID);
+
+    void kinChainJointsID(std::vector<std::string>* _kcJointID);
+
+    std::vector<double> getJointParams(std::string _id);
 
     soth::VectorBound extractJointBounds();
     void extractJointBounds(Eigen::MatrixXd* bounds);

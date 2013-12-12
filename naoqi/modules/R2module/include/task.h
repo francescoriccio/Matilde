@@ -107,6 +107,7 @@ private:
 
     // The task kinematic chain
     Rmath::KinChain* theKinChain;
+    int base_end;
 
     // Toggle positioning/velocity task
     bool positioningActive;
@@ -117,17 +118,42 @@ private:
     std::vector<Eigen::VectorXd> path;
     // Current progress in the path
     int path_currentStep;
+    // Current target velocity
+    Eigen::VectorXd targetVelocity;
+
 
 public:
     // Constructor
-    Task(int m, int n,  int _priority, ConfigReader theConfigReader, int _base, int _ee);
+    Task(int m, int n,  int _priority, ConfigReader theConfigReader);
+    Task(int m, int n,  int _priority, const Rmath::KinChain& _kc, int _base = 0);
     // Destructor
     ~Task();
 
+//    inline Rmath::KinChain* kinChain(){ return theKinChain; }
+
     // Retrieve the current end-effector pose
     Eigen::VectorXd getCurrentPose(const Eigen::Matrix4d& baseTransform = Eigen::Matrix4d::Identity()) const;
+    // Retrieve the current target velocity
+    inline const Eigen::VectorXd& getTargetVelocity() const
+    {
+        return targetVelocity;
+    }
+    // Retrieve the current target pose
+    const Eigen::VectorXd getTargetPose() const;
+    // Retrieve the kinchain joints information
+    void getJointsIDs(std::map<std::string, int>* jointsIDs) const
+    {
+        theKinChain->getJointsIDs(jointsIDs);
+    }
+    // Check if the task is done
+    inline bool done() const {
+        return (path_currentStep == path.size()-1);
+    }
+
     // Set a desired pose in the task space
     void setDesiredPose(const Eigen::VectorXd& dp, int n_controlPoints = 1,
+                        const Eigen::Matrix4d& baseTransform = Eigen::Matrix4d::Identity());
+    void setDesiredPose(const Eigen::VectorXd& idp, const Eigen::VectorXd& dp, int n_controlPoints = 1,
                         const Eigen::Matrix4d& baseTransform = Eigen::Matrix4d::Identity());
     // Set a desired configuration in the joint space
     void setDesiredConfiguration(const Eigen::VectorXd& desiredConf, int n_controlPoints);
@@ -143,7 +169,7 @@ public:
                                 const Eigen::Matrix4d& baseTransform = Eigen::Matrix4d::Identity() );
 
     // Update function
-    void update(const Eigen::VectorXd& q, const Eigen::VectorXd& desiredVel,
+    void update(const Eigen::VectorXd& _q, const Eigen::VectorXd& desiredVel,
                 double K = 1.0, const Eigen::Matrix4d& baseTransform = Eigen::Matrix4d::Identity());
 };
 

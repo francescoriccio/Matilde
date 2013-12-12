@@ -74,14 +74,26 @@ private:
     // Joint limits primary task
     TaskBase* jointLimits;
 
-    // Common base kinematic chain (left foot to body center)
-    Rmath::KinChain* theKinChainLeftLeg;
     // All initialized tasks
     std::map <std::string, Task*> taskMap;
     // Stack of tasks currently active
     std::set<Task*, taskCmp> taskSet;
-    // Tasks respective positions within the whole kinematic chain
-    std::map <Task*, int> taskLoc;
+
+    // Common base kinematic chain (left foot to body center)
+    Rmath::KinChain* theKinChain_LLBase;
+    Rmath::KinChain* theKinChain_RLBase;
+
+    Rmath::KinChain* theKinChainLeftLeg;
+    Rmath::KinChain* theKinChainRightLeg;
+    Rmath::KinChain* theKinChainLeftArm;
+    Rmath::KinChain* theKinChainRightArm;
+    Rmath::KinChain* theKinChainHead;
+
+    Rmath::KinChain* CoM_LeftLeg;
+    Rmath::KinChain* CoM_RightLeg;
+    Rmath::KinChain* CoM_LeftArm;
+    Rmath::KinChain* CoM_RightArm;
+    Rmath::KinChain* CoM_Head;
 
 public:
 

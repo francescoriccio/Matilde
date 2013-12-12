@@ -232,12 +232,31 @@ TaskBase TaskBase::operator--(int)
  * - A ConfigReader class object to initialize the task kinematic chain;
  * - Two indices _base, _ee identifying the task kinematic chain in the ConfigReader object file.
  */
-Task::Task(int m, int n, int _priority, ConfigReader theConfigReader, int _base, int _ee):
+Task::Task(int m, int n, int _priority, ConfigReader theConfigReader):
     // Base class initalization
     TaskBase(_priority, Eigen::MatrixXd::Identity(m, n), Eigen::VectorXd::Zero(m), soth::Bound::BOUND_TWIN ),
     // Kinematic chain initialization
-    theKinChain( new Rmath::KinChain( theConfigReader, _base, _ee) ),
-    positioningActive(false), jointControlActive(false)
+    theKinChain( new Rmath::KinChain(theConfigReader) ), base_end(0),
+    // Flag initialization
+    positioningActive(false), jointControlActive(false),
+    // Target velocit initialization
+    targetVelocity(Eigen::VectorXd::Zero(m))
+{
+#ifdef DEBUG_MODE
+    INFO("Task kinematic chain:");
+    INFO(theKinChain);
+#endif
+}
+
+Task::Task(int m, int n,  int _priority, const Rmath::KinChain& _kc, int _base):
+    // Base class initalization
+    TaskBase(_priority, Eigen::MatrixXd::Identity(m, n), Eigen::VectorXd::Zero(m), soth::Bound::BOUND_TWIN ),
+    // Kinematic chain initialization
+    theKinChain( new Rmath::KinChain(_kc) ), base_end(_base),
+    // Flag initialization
+    positioningActive(false), jointControlActive(false),
+    // Target velocit initialization
+    targetVelocity(Eigen::VectorXd::Zero(m))
 {
 #ifdef DEBUG_MODE
     INFO("Task kinematic chain:");
@@ -271,6 +290,15 @@ Eigen::VectorXd Task::getCurrentPose(const Eigen::Matrix4d& baseTransform) const
     return currentPose;
 }
 
+/* TOCOMMENT */
+const Eigen::VectorXd Task::getTargetPose() const
+{
+    if(positioningActive)
+        return path.at(path_currentStep);
+    else
+        return getCurrentPose();
+}
+
 void Task::setDesiredPose(const Eigen::VectorXd& dp, int n_controlPoints, const Eigen::Matrix4d& baseTransform)
 {
     // Re-computing direct kinematics
@@ -290,6 +318,7 @@ void Task::setDesiredPose(const Eigen::VectorXd& dp, int n_controlPoints, const 
 
     assert(dp.size() == initialPose.size());
 
+    path.clear();
     for (float i = 1.0; i <= n_controlPoints; ++i)
         path.push_back(initialPose + (i/static_cast<float>(n_controlPoints)) * (dp - initialPose));
 
@@ -298,14 +327,48 @@ void Task::setDesiredPose(const Eigen::VectorXd& dp, int n_controlPoints, const 
     if (jointControlActive) jointControlActive = false;
 }
 
+void Task::setDesiredPose(const Eigen::VectorXd& idp, const Eigen::VectorXd& dp, int n_controlPoints, const Eigen::Matrix4d& baseTransform)
+{
+    // Re-computing direct kinematics
+    Eigen::Matrix4d H_chain;
+    theKinChain->forward((&H_chain));
+    H_chain = baseTransform * H_chain;
+
+    Eigen::VectorXd initialPose (constraint_matrix.rows());
+    if(constraint_matrix.rows() > POSITION_TASK_DIM)
+        // Retrieving the position from the translation vector of the forward kinematics
+        // Retrieving the orientation from the Euler fixed frame x-y-z angles
+        initialPose << H_chain.topRightCorner(POSITION_TASK_DIM,1),
+                       Rmath::xyzEulerAngles( H_chain.topLeftCorner(3,3) ).head(constraint_matrix.rows()-POSITION_TASK_DIM);
+    // If the task target is a position vector (A row size <= 3) just the translation vector of the forward kinematics is needed
+    else
+        initialPose << H_chain.col(POSITION_TASK_DIM).head(constraint_matrix.rows());
+
+    assert(idp.size() == initialPose.size());
+    assert(dp.size() == initialPose.size());
+
+    path.clear();
+    for (float i = 1.0; i <= n_controlPoints; ++i)
+        path.push_back(initialPose + (i/static_cast<float>(n_controlPoints)) * (idp - initialPose));
+
+    for (float i = 1.0; i <= n_controlPoints; ++i)
+        path.push_back(idp + (i/static_cast<float>(n_controlPoints)) * (dp - idp));
+
+    path_currentStep = 0;
+    positioningActive = true;
+    if (jointControlActive) jointControlActive = false;
+}
+
 void Task::setDesiredConfiguration(const Eigen::VectorXd& desiredConf, int n_controlPoints)
 {
+
     Eigen::VectorXd initialConf = theKinChain->jointConfiguration();
     assert(initialConf.size() == desiredConf.size());
 
     constraint_matrix = Eigen::MatrixXd::Identity(initialConf.size(), initialConf.size());
     bounds.setZero(initialConf.size(),1);
 
+    path.clear();
     for (float i = 1.0; i <= n_controlPoints; ++i)
         path.push_back(initialConf + (i/static_cast<float>(n_controlPoints)) * (desiredConf - initialConf));
 
@@ -317,28 +380,17 @@ void Task::setDesiredConfiguration(const Eigen::VectorXd& desiredConf, int n_con
 void Task::circularPathGenerator( const Eigen::VectorXd& dp, float z_shift, int n_controlPoints, float radius, int n,
                             const Eigen::Matrix4d& baseTransform )
 {
+
     // Re-computing direct kinematics
     Eigen::Matrix4d H_chain;
     theKinChain->forward((&H_chain));
     H_chain = baseTransform * H_chain;
 
-//    Eigen::Vector3d initialTranslation;
-//    initialTranslation << 218.7, 113, 112.31;
-//    Eigen::Vector3d transEEd = dp.head(3) - initialTranslation;
-//    INFO("desired vector: \n" << dp.head(3));
-//    INFO("current vector: \n" << H_chain.topRightCorner(3,1));
-//    /* very beginning Nao left hand translation
-//        218.7, 113, 112.31
-//    */
-//    INFO("translation vector: \n" << transEEd);
-
+    path.clear();
     for (float i = 0.0; i < n*2*M_PI; i+= 2*M_PI/n_controlPoints)
     {
         Eigen::VectorXd ee_desiredPose_handframe(4);
-        ee_desiredPose_handframe << /*transEEd(0)+*/ radius*cos(i),
-                                    /*transEEd(1)+*/ radius*sin(i),
-                                    /*transEEd(2)+*/ z_shift,
-                                    1.0;
+        ee_desiredPose_handframe << radius*cos(i), radius*sin(i), z_shift, 1.0;
         Rmath::trim(&ee_desiredPose_handframe);
 
         Eigen::VectorXd ee_desiredPose_CoMframe(dp.size());
@@ -361,11 +413,17 @@ void Task::circularPathGenerator( const Eigen::VectorXd& dp, float z_shift, int 
  * Task update function: update the constraint matrix A=A(q) with a new value of q and replace the target vector
  * with a proportional/derivative control law of the type K*POSE_ERROR + DESIRED_VELOCITY.
  */
-void Task::update( const Eigen::VectorXd& q, const Eigen::VectorXd& desiredVel, double K, const Eigen::Matrix4d& baseTransform )
+void Task::update( const Eigen::VectorXd& _q, const Eigen::VectorXd& desiredVel, double K, const Eigen::Matrix4d& baseTransform )
 {
     // Dimensions must be consistent
     assert(constraint_matrix.rows() == desiredVel.size());
-    assert(constraint_matrix.cols() == q.size());
+    assert(constraint_matrix.cols() == _q.size());
+
+    Eigen::VectorXd q(_q.size());
+    q << -_q.head(base_end).reverse(), _q.tail(_q.size()-base_end);
+
+    Eigen::Matrix4d H_chain;
+    theKinChain->forward((&H_chain));
 
     // Cartesian space task
     if (!jointControlActive)
@@ -421,21 +479,33 @@ void Task::update( const Eigen::VectorXd& q, const Eigen::VectorXd& desiredVel, 
             else
                 currentPose << H_chain.col(POSITION_TASK_DIM).head(constraint_matrix.rows());
 
-            Eigen::VectorXd pose_error = path.at(path_currentStep) - currentPose;
+            Eigen::VectorXd pose_error;
+            if(path_currentStep < path.size())
+                 pose_error = path.at(path_currentStep) - currentPose;
+            else
+                pose_error = path.at(path.size()-1) - currentPose;
 
             // Updating the bound vector with the task error + a feedforward term
             for(int i=0; i<bounds.rows(); ++i)
+            {
                 bounds[i] = K * pose_error(i) + desiredVel(i);
+                targetVelocity(i) = K * pose_error(i) + desiredVel(i);
+            }
 
             if ( (pose_error.norm() < POSE_ERROR_TOLERANCE) && (path_currentStep < path.size()-1) )
                 ++path_currentStep;
-            else if ((pose_error.norm() < POSE_ERROR_TOLERANCE) && (path_currentStep == path.size()-1) )
-                stop();
+
+//            if ((pose_error.norm() < POSE_ERROR_TOLERANCE) && (path_currentStep == path.size()-1) )
+//                stop();
+
         }
         else
         {
             for(int i=0; i<bounds.rows(); ++i)
+            {
                 bounds[i] = K * desiredVel(i);
+                targetVelocity(i) = K * desiredVel(i);
+            }
         }
     }
     // Joint space task
@@ -450,21 +520,32 @@ void Task::update( const Eigen::VectorXd& q, const Eigen::VectorXd& desiredVel, 
 
         if (positioningActive)
         {
-            Eigen::VectorXd joint_error = path.at(path_currentStep) - theKinChain->jointConfiguration();
+            Eigen::VectorXd joint_error;
+            if(path_currentStep < path.size())
+                 joint_error = path.at(path_currentStep) - theKinChain->jointConfiguration();
+            else
+                joint_error = path.at(path.size()-1) - theKinChain->jointConfiguration();
 
             // Updating the bound vector with the task error + a feedforward term
             for(int i=0; i<bounds.rows(); ++i)
+            {
                 bounds[i] = K * joint_error(i) + desiredVel(i);
+                targetVelocity(i) = K * joint_error(i) + desiredVel(i);
+            }
 
             if ( (joint_error.norm() < POSE_ERROR_TOLERANCE) && (path_currentStep < path.size()-1) )
                 ++path_currentStep;
-            else if ((joint_error.norm() < POSE_ERROR_TOLERANCE) && (path_currentStep == path.size()) )
-                stop();
+
+//            if ((joint_error.norm() < POSE_ERROR_TOLERANCE) && (path_currentStep == path.size()-1) )
+//                stop();
         }
         else
         {
             for(int i=0; i<bounds.rows(); ++i)
+            {
                 bounds[i] = K * desiredVel(i);
+                targetVelocity(i) = K * desiredVel(i);
+            }
         }
     }
 
