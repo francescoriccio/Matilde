@@ -24,9 +24,6 @@
 #include <alproxies/alvideodeviceproxy.h>
 #include <alproxies/alredballtrackerproxy.h>
 
-// Soth includes
-#include <soth/HCOD.hpp>
-
 // Libmath includes
 #include "libmath/kinChain.h"
 #include "libmath/Rutils.h"
@@ -71,13 +68,76 @@ private:
     std::vector<std::string> jointID;
     // Container for the jointBounds
     Eigen::MatrixXd jointBounds;
-    // Joint limits primary task
-    TaskBase* jointLimits;
 
-    // All initialized tasks
-    std::map <std::string, Task*> taskMap;
-    // Stack of tasks currently active
-    std::set<Task*, taskCmp> taskSet;
+    // Task handler and scheduler
+    class TaskManager
+    {
+
+    private:
+
+        // Pointer to the robot module
+        R2Module* module_ptr;
+
+        // Joint limits primary task
+        TaskBase* jointLimits;
+        // All initialized tasks
+        std::map <std::string, Task*> taskMap;
+        // Stack of tasks currently active
+        std::set<Task*, taskCmp> taskSet;
+        // Set of tasks changing their priority value
+        std::map<std::string, int> changingTaskMap;
+
+        // Update a single task
+        void taskUpdate( const std::string& taskName, const Eigen::VectorXd& q );
+        // Update all tasks fully enabled
+        void updateActiveTasks( const Eigen::VectorXd& q );
+        // Update all tasks in a transition phase
+        void updateIntermediateTasks( const Eigen::VectorXd& q, const Eigen::VectorXd& partial_qdot );
+
+        // Compute a partial HQP solution involving only fully enabled tasks
+        void computePartialSolution(const Eigen::VectorXd& q, Eigen::VectorXd* partial_qdot);
+        // Compute the final HQP involving all enabled tasks
+        void computeCompleteSolution(const Eigen::VectorXd& q, const Eigen::VectorXd& partial_qdot, Eigen::VectorXd* qdot);
+
+    public:
+
+        // Constructor
+        TaskManager( R2Module* m_ptr ): module_ptr(m_ptr){}
+        // Destructor
+        ~TaskManager();
+
+        TaskBase* Rbound;
+
+        // Set joint limits
+        void setJointLimits(const Eigen::MatrixXd& velBounds);
+        // Declare a new task
+        inline void createTask(const std::string& taskName, Task* taskPtr)
+        {
+            taskMap.insert( std::pair<std::string, Task*>(taskName,taskPtr) );
+        }
+        // Retrieve a reference to specific task
+        inline Task& task(const std::string& taskName)
+        {
+            assert(taskMap.find(taskName) != taskMap.end());
+            return *(taskMap[taskName]);
+        }
+        // Change task priorities
+        inline void changePriority(const std::string& taskName, int new_priority)
+        {
+            // Legal priority value check
+            assert(new_priority > 0);
+            assert(taskMap.find(taskName) != taskMap.end());
+
+            if ( (taskMap[taskName]->getPriority() != new_priority) &&
+                 (changingTaskMap.find(taskName) == changingTaskMap.end()) )
+                changingTaskMap.insert( std::pair<std::string,int>(taskName, new_priority) );
+        }
+
+        // Solve the HQP problem with the current task set
+        void exec(const Eigen::VectorXd& q, Eigen::VectorXd* qdot);
+    };
+    TaskManager taskManager;
+
 
     // Common base kinematic chain (left foot to body center)
     Rmath::KinChain* theKinChain_LLBase;
@@ -125,8 +185,6 @@ public:
 
     // Retrieve the current joint configuration
     Eigen::VectorXd getConfiguration();
-    // Update every active task with the current joint configuration
-    void updateConstraints(const Eigen::VectorXd& q);
     // Call Naoqi motion proxy to actually execute the motion
     bool updateConfiguration(const Eigen::VectorXd &delta_q);
 

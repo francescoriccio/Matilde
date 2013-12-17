@@ -12,8 +12,8 @@
 
 /**
   TODO:
-    - force soth convergence (stop criteria)
-    - task formalization
+    - rearraging priorities
+    - Simulations
 */
 
 #define INFO(x) std::cerr << "\033[22;34;1m" << "[r2module] " << x << "\033[0m" << std::endl;
@@ -25,7 +25,7 @@ namespace AL
  * Module constructor using Naoqi API methods.
  */
 R2Module::R2Module( boost::shared_ptr<ALBroker> pBroker, const std::string& pName ):
-  ALModule(pBroker , pName), fRegisteredToVideoDevice(false)
+    ALModule(pBroker , pName), fRegisteredToVideoDevice(false), taskManager(this)
 {
   // Module description
   setModuleDescription("Robotics2 Project");
@@ -67,18 +67,6 @@ R2Module::~R2Module()
     // Destroy thread
     pthread_cancel( motionThreadId );
     pthread_cancel( cameraThreadId );
-
-    // Deallocate memory
-    if (jointLimits) delete jointLimits;
-    // Cleaning up containers
-    std::map<std::string, Task*>::iterator destroyer = taskMap.begin();
-    while (destroyer != taskMap.end())
-    {
-        if(destroyer->second) delete destroyer->second;
-        ++destroyer;
-    }
-    taskMap.clear();
-    taskSet.clear();
 }
 
 /*
@@ -87,6 +75,9 @@ R2Module::~R2Module()
  */
 void R2Module::init()
 {
+    // Static initialization of parameters
+    initialization();
+
     ConfigReader theConfigReader(CONFIG_PATH + JOINT_BOUNDS_CFG);
     theConfigReader.storeJointsID(&jointID);
 
@@ -97,12 +88,6 @@ void R2Module::init()
     // Initialize the base kinematic chain (from Nao's right foot to body center)
     theConfigReader.setKinChain(CONFIG_PATH + RIGHT_LEG_BASE_CFG);
     theKinChain_RLBase = new Rmath::KinChain( theConfigReader );
-
-    // Initialize the fixed transformation base-ankle
-    base_ankle << 0.0,      0.0,     1.0,    BASE_ANKLE_X,
-                  0.0,     -1.0,     0.0,    BASE_ANKLE_Y,
-                  1.0,      0.0,     0.0,    BASE_ANKLE_Z,
-                  0.0,      0.0,     0.0,             1.0;
 
     // initialize kinChain transofrmation w.r.t. CoM
     theConfigReader.setKinChain(CONFIG_PATH + COM_HEAD_CFG);
@@ -190,7 +175,7 @@ void R2Module::init()
   posBound2velBound(jointBounds, getConfiguration(), &velBounds);
 
   // Actual task initialization
-  jointLimits = new TaskBase(0, Eigen::MatrixXd::Identity( JOINTS_NUM, JOINTS_NUM ), velBounds);
+  taskManager.setJointLimits(velBounds);
 
 #ifdef DEBUG_MODE
   INFO("Initializing: retrieving joint limits... ");
@@ -217,16 +202,14 @@ void R2Module::init()
                              LLEG_CHAIN_SIZE);
 
   //  // Push every task into the task map
-  taskMap.insert( std::pair<std::string, Task*> ("Head task", looking) );
-  taskMap.insert( std::pair<std::string, Task*> ("Right arm task", Rpointing) );
-  taskMap.insert( std::pair<std::string, Task*> ("Left arm task", Lpointing) );
-  taskMap.insert( std::pair<std::string, Task*> ("Right leg task", Rsupporting) );
-  taskMap.insert( std::pair<std::string, Task*> ("Left leg task", Lsupporting) );
-
+  taskManager.createTask(HEAD_TASK, looking);
+  taskManager.createTask(RIGHT_ARM, Rpointing);
+  taskManager.createTask(LEFT_ARM, Lpointing);
+  taskManager.createTask(RIGHT_LEG, Rsupporting);
+  taskManager.createTask(LEFT_LEG, Lsupporting);
 
 #ifdef DEBUG_MODE
   INFO("Initializing tasks: ");
-  INFO("- Joint limits, with priority " << jointLimits->getPriority());
   INFO("- Head task, with priority " << looking->getPriority());
   INFO("- Right arm task, with priority " << Rpointing->getPriority());
   INFO("- Left arm task, with priority " << Lpointing->getPriority());
@@ -234,7 +217,6 @@ void R2Module::init()
   INFO("- Left leg task, with priority " << Lsupporting->getPriority());
 #endif
   }
-
 }
 
 /*
@@ -314,7 +296,7 @@ void R2Module::getCurrentFrame()
   if ((char) cv::waitKey(33) != 27)
       cv::imshow("Frame", fcurrImageHeader);
 
-  // Release the proxy
+  // Release the proxystd::cout<<"jesus: \n"<<desiredLHandPose<<std::endl;
   fCamProxy->releaseImage(fVideoClientName);
 }
 
@@ -354,108 +336,48 @@ void R2Module::motion()
     INFO("Executing main loop...");
 #endif
 
-//    // Turn tasks to active
-    jointLimits->activate();
-    taskMap["Head task"]->activate();
-    taskMap["Right arm task"]->activate();
-    taskMap["Left arm task"]->activate();
-    taskMap["Right leg task"]->activate();
-    taskMap["Left leg task"]->activate();
+    // Turn tasks to active
+    taskManager.task(HEAD_TASK).activate(HEAD_TRANSITION_STEP);
+    taskManager.task(RIGHT_ARM).activate(RARM_TRANSITION_STEP);
+    taskManager.task(LEFT_ARM).activate(LARM_TRANSITION_STEP);
+    taskManager.task(RIGHT_LEG).activate(RLEG_TRANSITION_STEP);
+    taskManager.task(LEFT_LEG).activate(LLEG_TRANSITION_STEP);
 
-    // Defining the desired pose vectors in the task space
-    Eigen::VectorXd desiredHeadPose(HEAD_TASK_DIM),
-                    desiredLHandPose(LARM_TASK_DIM),
-                    desiredRHandPose(RARM_TASK_DIM),
-                    desiredRLegPose(RLEG_TASK_DIM),
-                    desiredLLegPose(LLEG_TASK_DIM);
-    Eigen::VectorXd desiredHeadPosition(3),
-                    desiredRHandPosition(3),
-                    desiredLHandPosition(3),
-                    desiredRLegPosition(3),
-                    desiredLLegPosition(3);
-    Eigen::VectorXd desiredHeadOrientation(3),
-                    desiredRHandOrientation(3),
-                    desiredLHandOrientation(3),
-                    desiredRLegOrientation(3),
-                    desiredLLegOrientation(3);
-
-    // head position in 3D space
-    desiredHeadPosition << HEAD_DESIRED_X, HEAD_DESIRED_Y, HEAD_DESIRED_Z;
-    // head orientation in 3D space
-    desiredHeadOrientation << HEAD_DESIRED_ROLL, HEAD_DESIRED_PITCH, HEAD_DESIRED_YAW;
-    // Right arm position in 3D space
-    desiredRHandPosition << RARM_DESIRED_X, RARM_DESIRED_Y, RARM_DESIRED_Z;
-    // Right arm orientation in 3D space
-    desiredRHandOrientation << RARM_DESIRED_ROLL, RARM_DESIRED_PITCH, RARM_DESIRED_YAW;
-    // left arm position in 3D space
-    desiredLHandPosition << LARM_DESIRED_X, LARM_DESIRED_Y, LARM_DESIRED_Z;
-    // left arm orientation in 3D space
-    desiredLHandOrientation << LARM_DESIRED_ROLL, LARM_DESIRED_PITCH, LARM_DESIRED_YAW;
-    // Right leg position in 3D space
-    desiredRLegPosition << RLEG_DESIRED_X, RLEG_DESIRED_Y, RLEG_DESIRED_Z;
-    // Right leg orientation in 3D space
-    desiredRLegOrientation << RLEG_DESIRED_ROLL, RLEG_DESIRED_PITCH, RLEG_DESIRED_YAW;
-    // Left leg position in 3D space
-    desiredLLegPosition << LLEG_DESIRED_X, LLEG_DESIRED_Y, LLEG_DESIRED_Z;
-    // Left leg orientation in 3D space
-    desiredLLegOrientation << LLEG_DESIRED_ROLL, LLEG_DESIRED_PITCH, LLEG_DESIRED_YAW;
-
-    if( HEAD_TASK_DIM > 3 )
-        desiredHeadPose << desiredHeadPosition, desiredHeadOrientation.head(HEAD_TASK_DIM-3);
-    else
-        desiredHeadPose << desiredHeadPosition.head(HEAD_TASK_DIM);
-
-    if( LARM_TASK_DIM > 3 )
-        desiredLHandPose << desiredLHandPosition, desiredLHandOrientation.head(LARM_TASK_DIM-3);
-    else
-        desiredLHandPose << desiredLHandPosition.head(LARM_TASK_DIM);
-
-    if( RARM_TASK_DIM > 3 )
-        desiredRHandPose << desiredRHandPosition, desiredRHandOrientation.head(RARM_TASK_DIM-3);
-    else
-        desiredRHandPose << desiredRHandPosition.head(RARM_TASK_DIM);
-
-    if( RLEG_TASK_DIM > 3 )
-        desiredRLegPose << desiredRLegPosition, desiredRLegOrientation.head(RLEG_TASK_DIM-3);
-    else
-        desiredRLegPose << desiredRLegPosition.head(RLEG_TASK_DIM);
-
-    if( LLEG_TASK_DIM > 3 )
-        desiredLLegPose << desiredLLegPosition, desiredLLegOrientation.head(LLEG_TASK_DIM-3);
-    else
-        desiredLLegPose << desiredLLegPosition.head(LLEG_TASK_DIM);
-
-    Eigen::Vector3d iDesiredPose;
-    iDesiredPose << 0.0, 48, 590;
-
-    Eigen::Matrix4d h_CoMRL;
+    Eigen::Matrix4d h_CoMRL, h_CoMLL;
     CoM_RightLeg->forward(&h_CoMRL);
-    if(taskMap["Right leg task"]->isActive())
-        taskMap["Right leg task"]->setDesiredPose( desiredRLegPose.head(RLEG_TASK_DIM), RLEG_TASK_NSTEPS, h_CoMRL );
-
-    Eigen::Matrix4d h_CoMLL;
     CoM_LeftLeg->forward(&h_CoMLL);
-    if(taskMap["Left leg task"]->isActive())
-        taskMap["Left leg task"]->setDesiredPose( desiredLLegPose.head(LLEG_TASK_DIM), LLEG_TASK_NSTEPS, h_CoMLL );
 
-    if(taskMap["Head task"]->isActive())
-        taskMap["Head task"]->setDesiredPose( desiredHeadPose.head(HEAD_TASK_DIM), HEAD_TASK_NSTEPS, base_ankle );
+    // Set fixed base transform for the tasks
+    taskManager.task(RIGHT_LEG).set_baseTransform(h_CoMRL);
+    taskManager.task(LEFT_LEG).set_baseTransform(h_CoMLL);
+    taskManager.task(HEAD_TASK).set_baseTransform(base_ankle);
+    taskManager.task(LEFT_ARM).set_baseTransform(base_ankle);
+    taskManager.task(RIGHT_ARM).set_baseTransform(base_ankle);
 
-    if(taskMap["Left arm task"]->isActive())
+    if(taskManager.task(RIGHT_LEG).taskStatus() != inactive)
+        taskManager.task(RIGHT_LEG).setDesiredPose( desiredRLegPose.head(RLEG_TASK_DIM), RLEG_TASK_NSTEPS );
+
+    if(taskManager.task(LEFT_LEG).taskStatus() != inactive)
+        taskManager.task(LEFT_LEG).setDesiredPose( desiredLLegPose.head(LLEG_TASK_DIM), LLEG_TASK_NSTEPS );
+
+    if(taskManager.task(HEAD_TASK).taskStatus() != inactive)
+        taskManager.task(HEAD_TASK).setDesiredPose( desiredHeadPose.head(HEAD_TASK_DIM), HEAD_TASK_NSTEPS );
+
+    if(taskManager.task(LEFT_ARM).taskStatus() != inactive)
 #ifndef LARM_CIRCLE_TASK
-        taskMap["Left arm task"]->setDesiredPose(iDesiredPose, desiredLHandPose.head(LARM_TASK_DIM), LARM_TASK_NSTEPS, base_ankle );
+        taskManager.task(LEFT_ARM).setDesiredPose( desiredLHandPose.head(LARM_TASK_DIM), LARM_TASK_NSTEPS );
 #else
-        taskMap["Left arm task"]->circularPathGenerator(desiredLHandPose.head(LARM_TASK_DIM), CIRCLE_Z_DEPTH,
-                                                        LARM_TASK_NSTEPS, CIRCLE_RADIUS, CIRCLE_LAPS, base_ankle );
+        taskManager.task(LEFT_ARM).circularPathGenerator(desiredLHandPose.head(LARM_TASK_DIM), CIRCLE_Z_DEPTH,
+                                                        LARM_TASK_NSTEPS, CIRCLE_RADIUS, CIRCLE_LAPS );
 #endif
 
 #ifndef RARM_LARM_JOINT_TASK
-    if(taskMap["Right arm task"]->isActive())
+    if(taskManager.task(RIGHT_ARM).taskStatus() != inactive)
 #ifndef RARM_CIRCLE_TASK
-        taskMap["Right arm task"]->setDesiredPose(desiredRHandPose.head(RARM_TASK_DIM), RARM_TASK_NSTEPS, base_ankle );
+        taskManager.task(RIGHT_ARM).setDesiredPose(desiredRHandPose.head(RARM_TASK_DIM), RARM_TASK_NSTEPS );
 #else
-        taskMap["Right arm task"]->circularPathGenerator(desiredRHandPose.head(RARM_TASK_DIM), CIRCLE_Z_DEPTH,
-                                                         RARM_TASK_NSTEPS, CIRCLE_RADIUS, CIRCLE_LAPS, base_ankle );
+        taskManager.task(RIGHT_ARM).circularPathGenerator(desiredRHandPose.head(RARM_TASK_DIM), CIRCLE_Z_DEPTH,
+                                                         RARM_TASK_NSTEPS, CIRCLE_RADIUS, CIRCLE_LAPS );
 #endif
 #endif
 
@@ -470,116 +392,37 @@ void R2Module::motion()
     INFO("Desired Hip position in space: [\n" << desiredLLegPose << "]");
 #endif
 
-    updateConstraints(getConfiguration());
-
     // Main loop
     while(true)
     {
+
 #ifdef UP_DOWN_TASK
-        if ( (taskMap["Right leg task"]->done()) && (taskMap["Left leg task"]->done()) )
+        if ( (taskManager.task(RIGHT_LEG).done()) && (taskManager.task(LEFT_LEG).done()) )
         {
             UP_DOWN *= -1;
 
-            Eigen::Matrix4d h_CoMRL, h_CoMLL;
-            CoM_RightLeg->forward(&h_CoMRL);
-            CoM_LeftLeg->forward(&h_CoMLL);
-
-            Eigen::VectorXd desiredRLegPose = taskMap["Right leg task"]->getTargetPose();
-            Eigen::VectorXd desiredLLegPose = taskMap["Left leg task"]->getTargetPose();
+            Eigen::VectorXd desiredRLegPose = taskManager.task(RIGHT_LEG).getTargetPose();
+            Eigen::VectorXd desiredLLegPose = taskManager.task(LEFT_LEG).getTargetPose();
             desiredRLegPose(2) += UP_DOWN;
             desiredLLegPose(2) += UP_DOWN;
-            taskMap["Right leg task"]->setDesiredPose(desiredRLegPose, RLEG_TASK_NSTEPS, h_CoMRL );
-            taskMap["Left leg task"]->setDesiredPose(desiredLLegPose, LLEG_TASK_NSTEPS, h_CoMLL );
+            taskManager.task(RIGHT_LEG).setDesiredPose(desiredRLegPose.head(RLEG_TASK_DIM), RLEG_TASK_NSTEPS);
+            taskManager.task(LEFT_LEG).setDesiredPose(desiredLLegPose.head(LLEG_TASK_DIM), LLEG_TASK_NSTEPS);
         }
 #endif
-
         // Retrieve current robot configuration
-        Eigen::VectorXd q(jointID.size());
+        Eigen::VectorXd q(JOINTS_NUM);
         q = getConfiguration();
 
-#ifdef DEBUG_MODE
+    #ifdef DEBUG_MODE
         INFO("\nCurrent joint configuration:");
-        for(unsigned int i=0; i<q.size(); ++i)
+        for(unsigned int i = 0; i < q.size(); ++i)
             INFO(jointID.at(i) << "\t" << q(i));
-#endif
-        // Update all tasks
-        updateConstraints(q);
+    #endif
 
-        // Push active tasks into the ordered set
-        taskSet.clear();
-        std::map<std::string, Task*>::const_iterator adder;
-        for ( adder = taskMap.begin(); adder != taskMap.end(); ++adder )
-            if( (adder->second)->isActive())
-                taskSet.insert(adder->second);
+        // Solve the HQP problem with the current task set
+        Eigen::VectorXd qdot(JOINTS_NUM);
+        taskManager.exec(q, &qdot);
 
-        // Initialize the HQP solver
-        soth::HCOD hsolver( q.size(), taskSet.size()+1 );
-        Eigen::VectorXd qdot(q.size());
-
-#ifdef DEBUG_MODE
-        INFO("Initializing HQP solver...");
-        INFO( "Active tasks: " << (taskSet.size()+1) << " out of " << (taskMap.size()+1) );
-        INFO("Generating stack...");
-
-        int task_i = 2;
-#endif
-        // Set up the hierarchy
-        std::vector<Eigen::MatrixXd> A;
-        std::vector<soth::VectorBound> b;
-        // Joint limits first (top priority task)
-        A.push_back(jointLimits->constraintMatrix());
-        b.push_back(jointLimits->vectorBounds());
-        // All the remaining tasks (in descending order of priority)
-        std::set<Task*>::iterator updater = taskSet.begin();
-        while( updater != taskSet.end() )
-        {
-            // Retrieve current kinchain joints information
-            std::map<std::string, int> jointsIndicesMap;
-            (*updater)->getJointsIDs(&jointsIndicesMap);
-            // Current task constraint matrix (restricted to the joint involved)
-            Eigen::MatrixXd currentA_task = (*updater)->constraintMatrix();
-
-            // Rewrite the task constraint matrix with the complete joint configuration
-            Eigen::MatrixXd currentA = Eigen::MatrixXd::Zero( currentA_task.rows(), JOINTS_NUM );
-            // The task constraint matrix is the only non-zero block in A
-            for (unsigned int i = 0; i < jointID.size(); ++i)
-            {
-                if (jointsIndicesMap.find(jointID.at(i)) != jointsIndicesMap.end())
-                    currentA.col(i) = currentA_task.col( jointsIndicesMap[jointID.at(i)] );
-                else
-                    currentA.col(i) = Eigen::VectorXd::Zero(currentA_task.rows());
-            }
-
-            A.push_back(currentA);
-            b.push_back((*updater)->vectorBounds());
-            ++updater;
-
-#ifdef DEBUG_MODE
-            INFO("Task n. " << task_i << ", constraint matrix (enlarged):\n" << currentA);
-            ++task_i;
-#endif
-        }
-        hsolver.pushBackStages(A, b);
-
-        // Configure the solver
-        hsolver.setDamping(0.0);
-        hsolver.setInitialActiveSet();
-
-#ifdef DEBUG_MODE
-        INFO("Configuring HQP solver...");
-        INFO("Start active search... ");
-#endif
-        // Run the solver
-        hsolver.activeSearch(qdot);
-        // Trim ssolution
-        Rmath::trim(&qdot);
-
-#ifdef DEBUG_MODE
-        INFO("Done.");
-        INFO("Active set: ");
-        hsolver.showActiveSet(std::cerr);
-        INFO("Solution: [\n" << qdot << "]");
-#endif
         // Update the robot configuration with the obtained solution
         updateConfiguration(q + qdot*TIME_STEP);
     }
@@ -608,157 +451,15 @@ Eigen::VectorXd R2Module::getConfiguration()
 }
 
 /*
- * Update every active task with the current joint configuration.
- */
-void R2Module::updateConstraints(const Eigen::VectorXd& q)
-{
-    /* ------------------------- Joint bounds update -------------------------*/
-
-    Eigen::MatrixXd velBounds(q.size(), 2);
-    posBound2velBound(jointBounds, q, &velBounds);
-    jointLimits->setVectorBounds(velBounds);
-
-#ifdef DEBUG_MODE
-    INFO("Updating joint bounds: ");
-    INFO(std::endl << *jointLimits);
-#endif
-
-    /* -------------------- Head and arms tasks update --------------------*/
-
-
-    // Head task update
-    Eigen::VectorXd q_H (LLEG_CHAIN_SIZE+HEAD_CHAIN_SIZE);
-    q_H << q.segment<LLEG_CHAIN_SIZE>(LLEG_CHAIN_BEGIN),
-            q.segment<HEAD_CHAIN_SIZE>(HEAD_CHAIN_BEGIN);
-    if(taskMap["Head task"]->isActive())
-        ( taskMap["Head task"] )->update( q_H, Eigen::VectorXd::Zero(HEAD_TASK_DIM), K_HEAD, base_ankle );
-
-#ifdef DEBUG_MODE
-    INFO("Head task constraint equation: ");
-    INFO(std::endl << *( taskMap["Head task"] ) );
-#endif
-
-    // Left arm task update
-    Eigen::VectorXd q_LA (LLEG_CHAIN_SIZE+LARM_CHAIN_SIZE);
-    q_LA << q.segment<LLEG_CHAIN_SIZE>(LLEG_CHAIN_BEGIN),
-            q.segment<LARM_CHAIN_SIZE>(LARM_CHAIN_BEGIN);
-    if( taskMap["Left arm task"]->isActive() )
-        ( taskMap["Left arm task"] )->update( q_LA, Eigen::VectorXd::Zero(LARM_TASK_DIM), K_LARM, base_ankle );
-
-#ifdef DEBUG_MODE
-    INFO("Left arm task constraint equation: ");
-    INFO(std::endl << *( taskMap["Left arm task"] ) );
-#endif
-
-    // Right arm task update
-    Eigen::VectorXd q_RA (LLEG_CHAIN_SIZE+RARM_CHAIN_SIZE);
-    q_RA << q.segment<LLEG_CHAIN_SIZE>(LLEG_CHAIN_BEGIN),
-            q.segment<RARM_CHAIN_SIZE>(RARM_CHAIN_BEGIN);
-#ifdef RARM_LARM_JOINT_TASK
-    if ( ARMS_TASK == MIMIC_TASK )
-    {
-        Eigen::VectorXd desiredRHandPose = ( taskMap["Left arm task"] )->getTargetPose();
-        assert(RARM_TASK_DIM == LARM_TASK_DIM);
-        assert(LARM_TASK_DIM >= 2);
-        desiredRHandPose(1) = desiredRHandPose(1)-MINIMUM_HANDS_DISTANCE;
-
-        if (LARM_TASK_DIM > 3)
-            for (int i=3; i < LARM_TASK_DIM; ++i)
-                desiredRHandPose(i) = -desiredRHandPose(i);
-
-        ( taskMap["Right arm task"] )->setDesiredPose(desiredRHandPose, 1, base_ankle );
-        ( taskMap["Right arm task"] )->update( q_RA, Eigen::VectorXd::Zero(RARM_TASK_DIM), K_RARM, base_ankle );
-    }
-    else if ( ARMS_TASK == MIRROR_TASK )
-    {
-        Eigen::VectorXd desiredRHandVel = ( taskMap["Left arm task"] )->getTargetVelocity();
-
-        assert(RARM_TASK_DIM == LARM_TASK_DIM);
-        assert(LARM_TASK_DIM >= 2);
-        desiredRHandVel(1) = -desiredRHandVel(1);
-
-        if (LARM_TASK_DIM > 3)
-            for (int i=3; i < LARM_TASK_DIM; ++i)
-                desiredRHandVel(i) = -desiredRHandVel(i);
-
-        ( taskMap["Right arm task"] )->update( q_RA, desiredRHandVel, K_RARM, base_ankle );
-    }
-#else
-    if( taskMap["Right arm task"]->isActive() )
-        ( taskMap["Right arm task"] )->update( q_RA, Eigen::VectorXd::Zero(RARM_TASK_DIM), K_RARM, base_ankle );
-#endif
-
-#ifdef DEBUG_MODE
-    INFO("Right arm task constraint equation: ");
-    INFO(std::endl << *( taskMap["Right arm task"] ) );
-#endif
-
-    // Right leg task update
-    Eigen::Matrix4d h_CoMRL;
-    CoM_RightLeg->forward(&h_CoMRL);
-    if( taskMap["Right leg task"]->isActive() )
-        ( taskMap["Right leg task"] )->update( q.segment<RLEG_CHAIN_SIZE>(RLEG_CHAIN_BEGIN),
-                                               Eigen::VectorXd::Zero(RLEG_TASK_DIM),
-                                               K_RLEG, h_CoMRL);
-
-#ifdef DEBUG_MODE
-    INFO("Right leg task constraint equation: ");
-    INFO(std::endl << *( taskMap["Right leg task"] ) );
-#endif
-
-
-    // Left leg task update
-    Eigen::Matrix4d h_CoMLL;
-    CoM_LeftLeg->forward(&h_CoMLL);
-    if( taskMap["Left leg task"]->isActive() )
-        ( taskMap["Left leg task"] )->update( q.segment<LLEG_CHAIN_SIZE>(LLEG_CHAIN_BEGIN),
-                                              Eigen::VectorXd::Zero(LLEG_TASK_DIM),
-                                              K_LLEG, h_CoMLL );
-
-#ifdef DEBUG_MODE
-    INFO("Left leg task constraint equation: ");
-    INFO(std::endl << *( taskMap["Left leg task"] ) );
-#endif
-
-}
-
-/*
  * Call Naoqi motion proxy to actually execute the motion.
  */
 bool R2Module::updateConfiguration(const Eigen::VectorXd& delta_q)
 {
-
-#ifdef TEST_KINCHAIN
-    Eigen::VectorXd delta_q_ = delta_q;
-#endif
-
     // Initialize variables
     AL::ALValue jointId, angles, setStiff, zeroArray;
     // Push into the vector all joint value increments to be requested
     for(int i=0; i< delta_q.size(); ++i)
     {
-
-#ifdef TEST_KINCHAIN
-        if (delta_q_(i) > 0)
-        {
-            if ( delta_q_(i) > jointBounds(i,1) )
-                delta_q_(i) = jointBounds(i,1);
-        }
-        else
-        {
-            if ( delta_q_(i) < jointBounds(i,0) )
-                delta_q_(i) = jointBounds(i,0);
-        }
-
-        if(delta_q_(i) != 0)
-        {
-            jointId.arrayPush( jointID.at(i) );
-            angles.arrayPush( delta_q_(i) );
-            setStiff.arrayPush( 1.0 );
-            zeroArray.arrayPush( 0.0 );
-        }
-        continue;
-#endif
         if(delta_q(i) != 0)
         {
             jointId.arrayPush( jointID.at(i) );

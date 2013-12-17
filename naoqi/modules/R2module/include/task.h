@@ -2,7 +2,7 @@
 * @class: Task
 * This class (and related hierarchy) defines a generic task in the HQP framework.
 *
-* @file transform.h
+* @file task.h
 * @author Claudio Delli Bovi, Chiara Picardi, Francesco Riccio
 */
 
@@ -14,6 +14,7 @@
 
 #include "libmath/kinChain.h"
 #include "configReader.h"
+#include "configParams.h"
 
 /** ------------------- TaskBase class declaration ------------------- */
 /**
@@ -26,16 +27,16 @@
 
 class TaskBase
 {
-
 protected:
 
     // Task description
     Eigen::MatrixXd constraint_matrix;
     soth::VectorBound bounds;
+    // Bound type
+    soth::Bound::bound_t boundType;
+
     // Priority value
     int priority;
-    // Task status
-    bool active;
 
 public:
 
@@ -53,11 +54,9 @@ public:
     // Task getters
     inline const soth::VectorBound& vectorBounds() const { return bounds; }
     inline const Eigen::MatrixXd& constraintMatrix() const { return constraint_matrix; }
-    inline bool isActive() const { return active; }
-    // Status togglers
-    inline void activate() { active = true; }
-    inline void stop() { active = false; }
+    inline const soth::Bound::bound_t getType() const { return boundType; }
     // Task setters
+    void setVectorBounds(const Eigen::VectorXd& b, soth::Bound::bound_t type);
     void setVectorBounds( const Eigen::MatrixXd& b );
     void setVectorBounds( const soth::VectorBound& b );
     void setConstraintMatrix( const Eigen::MatrixXd& A );
@@ -99,44 +98,111 @@ struct taskCmp
  * the desired pose and/or desired velocity.
  */
 
+enum status{
+    active = 1,
+    inactive,
+    inactive2active,
+    active2inactive
+};
 
 class Task : public TaskBase
 {
-
 private:
 
     // The task kinematic chain
     Rmath::KinChain* theKinChain;
     int base_end;
 
-    // Toggle positioning/velocity task
-    bool positioningActive;
-    // Toggle joint space/cartesian space control
-    bool jointControlActive;
+    class Parameters
+    {
+    public:
 
-    // Discrete path to desired pose
-    std::vector<Eigen::VectorXd> path;
-    // Current progress in the path
-    int path_currentStep;
-    // Current target velocity
-    Eigen::VectorXd targetVelocity;
+        status taskStatus;
+        float activationValue;
+        float activationStep;
 
+        // Partial solution of the HQP problem without the task
+        Eigen::VectorXd qd_n;
+
+        // Toggle positioning/velocity task
+        bool positioningActive;
+        // Toggle joint space/cartesian space control
+        bool jointControlActive;
+
+        // Discrete path to desired pose
+        std::vector<Eigen::VectorXd> path;
+        // Current progress in the path
+        int path_currentStep;
+        // Current target velocity
+        Eigen::VectorXd targetVelocity;
+        // Fixed base transform for the current task
+        Eigen::MatrixXd baseT;
+
+        Parameters( status _s, float h, float ts, Eigen::VectorXd tv, Eigen::VectorXd _qd, Eigen::Matrix4d _baseT ):
+            taskStatus(_s), activationValue(h), activationStep(ts), qd_n(_qd),
+            positioningActive(false), jointControlActive(false),
+            path_currentStep(0), targetVelocity(tv), baseT(_baseT){}
+
+        inline void increaseActivationValue()
+        {
+            activationValue += activationStep;
+            if(activationValue >= 1.0)
+            {
+                activationValue = 1.0;
+                taskStatus = active;
+            }
+        }
+
+        inline void decreaseActivationValue()
+        {
+            activationValue -= activationStep;
+            if(activationValue <= 0.0)
+            {
+                activationValue = 0.0;
+                taskStatus = inactive;
+            }
+        }
+
+    };
+
+    Parameters parameters;
 
 public:
     // Constructor
-    Task(int m, int n,  int _priority, ConfigReader theConfigReader);
-    Task(int m, int n,  int _priority, const Rmath::KinChain& _kc, int _base = 0);
+    Task(int m, int n,  int _priority, ConfigReader theConfigReader, soth::Bound::bound_t boundType = soth::Bound::BOUND_TWIN );
+    Task(int m, int n,  int _priority, const Rmath::KinChain& _kc, int _base = 0, soth::Bound::bound_t boundType = soth::Bound::BOUND_TWIN );
     // Destructor
     ~Task();
 
-//    inline Rmath::KinChain* kinChain(){ return theKinChain; }
+    inline Rmath::KinChain* kinChain(){ return theKinChain; }
+
+    inline status taskStatus(){ return parameters.taskStatus; }
+    void activate(float activationStep = ACTIVATION_STEP);
+    void stop( float decayStep = ACTIVATION_STEP);
+
+    void set_qd(Eigen::VectorXd new_qd)
+    {
+        assert(new_qd.size() == parameters.qd_n.size());
+        parameters.qd_n = new_qd;
+    }
+    void set_baseTransform(const Eigen::Matrix4d& _baseT)
+    {
+        parameters.baseT = _baseT;
+    }
+
+#ifdef TASK_MANAGER_DEBUG
+    inline float activationValue() const
+    {
+        return parameters.activationValue;
+    }
+#endif
 
     // Retrieve the current end-effector pose
-    Eigen::VectorXd getCurrentPose(const Eigen::Matrix4d& baseTransform = Eigen::Matrix4d::Identity()) const;
+    Eigen::VectorXd getCurrentPose() const;
     // Retrieve the current target velocity
     inline const Eigen::VectorXd& getTargetVelocity() const
     {
-        return targetVelocity;
+        return parameters.targetVelocity;
     }
     // Retrieve the current target pose
     const Eigen::VectorXd getTargetPose() const;
@@ -146,31 +212,31 @@ public:
         theKinChain->getJointsIDs(jointsIDs);
     }
     // Check if the task is done
-    inline bool done() const {
-        return (path_currentStep == path.size()-1);
+    inline bool done() const
+    {
+        if ((parameters.taskStatus == inactive))
+            return false;
+        else
+            return (parameters.path_currentStep == parameters.path.size()-1);
     }
 
     // Set a desired pose in the task space
-    void setDesiredPose(const Eigen::VectorXd& dp, int n_controlPoints = 1,
-                        const Eigen::Matrix4d& baseTransform = Eigen::Matrix4d::Identity());
-    void setDesiredPose(const Eigen::VectorXd& idp, const Eigen::VectorXd& dp, int n_controlPoints = 1,
-                        const Eigen::Matrix4d& baseTransform = Eigen::Matrix4d::Identity());
+    void setDesiredPose( const Eigen::VectorXd& dp, int n_controlPoints = 1 );
+    void setDesiredPose( const Eigen::VectorXd& idp, const Eigen::VectorXd& dp, int n_controlPoints = 1 );
     // Set a desired configuration in the joint space
     void setDesiredConfiguration(const Eigen::VectorXd& desiredConf, int n_controlPoints);
     // Reset the current target pose (either in joint or task space)
     inline void resetDesiredPose()
     {
-        positioningActive = false;
-        path.clear();
+        parameters.positioningActive = false;
+        parameters.path.clear();
     }
 
     // design a circular path
-    void circularPathGenerator( const Eigen::VectorXd& dp, float z_shift = 0.0, int n_controlPoints = 1, float radius = 0.0, int n = 1,
-                                const Eigen::Matrix4d& baseTransform = Eigen::Matrix4d::Identity() );
+    void circularPathGenerator( const Eigen::VectorXd& dp, float z_shift = 0.0, int n_controlPoints = 1, float radius = 0.0, int n = 1 );
 
     // Update function
-    void update(const Eigen::VectorXd& _q, const Eigen::VectorXd& desiredVel,
-                double K = 1.0, const Eigen::Matrix4d& baseTransform = Eigen::Matrix4d::Identity());
+    void update(const Eigen::VectorXd& _q, const Eigen::VectorXd& desiredVel, double K = 1.0 );
 };
 
 #endif

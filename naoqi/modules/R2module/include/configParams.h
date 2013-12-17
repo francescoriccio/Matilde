@@ -3,7 +3,9 @@
 
 #include <Eigen/Core>
 
-#define DEBUG_MODE
+//#define DEBUG_MODE
+//#define TASK_DEBUG
+//#define TASK_MANAGER_DEBUG
 
 
 // Discrete integration time step
@@ -30,8 +32,8 @@ static const double TIME_STEP = 1.0;
 
 
 // Config (.cfg) files directory and paths
-//static const std::string CONFIG_PATH = "/home/claudio/Naoqi/NaoModules/r2module/config/";
 static const std::string CONFIG_PATH = "/home/francesco/naoqi/modules/R2module/config/";
+//static const std::string CONFIG_PATH = "/home/claudio/Naoqi/NaoModules/r2module/config/";
 // Joint parameters
 static const std::string JOINT_BOUNDS_CFG = "joints_params.cfg";
 // Base kinematic chains
@@ -92,7 +94,14 @@ static Eigen::Matrix4d base_ankle;
 
 /** ---------------------------- Task parameters ---------------------------- */
 
+static const float ACTIVATION_STEP = 1.00;
 
+// Task names
+static const std::string HEAD_TASK = "Head task";
+static const std::string RIGHT_ARM = "Right arm task";
+static const std::string LEFT_ARM = "Left arm task";
+static const std::string RIGHT_LEG = "Right leg task";
+static const std::string LEFT_LEG = "Left leg task";
 
 // Task dimensions
 static const int HEAD_TASK_DIM = 6;
@@ -104,7 +113,7 @@ static const int LLEG_TASK_DIM = 6;
 // Task priorities
 static const int HEAD_TASK_PRIORITY = 5;
 static const int RARM_TASK_PRIORITY = 3;
-static const int LARM_TASK_PRIORITY = 2;
+static const int LARM_TASK_PRIORITY = 3;
 static const int RLEG_TASK_PRIORITY = 1;
 static const int LLEG_TASK_PRIORITY = 1;
 
@@ -117,25 +126,31 @@ static const double K_LLEG = 0.8;
 
 // Control points number
 static const int HEAD_TASK_NSTEPS = 1;
-static const int RARM_TASK_NSTEPS = 30;
-static const int LARM_TASK_NSTEPS = 30;
+static const int RARM_TASK_NSTEPS = 15;
+static const int LARM_TASK_NSTEPS = 8;
 static const int RLEG_TASK_NSTEPS = 30;
 static const int LLEG_TASK_NSTEPS = 30;
 
+// Smooth transition step
+static const double HEAD_TRANSITION_STEP = 1.0;
+static const double RARM_TRANSITION_STEP = 1.0;
+static const double LARM_TRANSITION_STEP = 1.0;
+static const double RLEG_TRANSITION_STEP = 1.0;
+static const double LLEG_TRANSITION_STEP = 1.0;
 
-#define RARM_LARM_JOINT_TASK
+//#define RARM_LARM_JOINT_TASK
 enum TaskType {
     MIRROR_TASK,
     MIMIC_TASK
 };
 static const TaskType ARMS_TASK = MIRROR_TASK;
-static const double MINIMUM_HANDS_DISTANCE = 350.0;
+static const double MINIMUM_HANDS_DISTANCE = 100.0;
 
 // Circle trajectory task parameters
 //#define LARM_CIRCLE_TASK
 //#define RARM_CIRCLE_TASK
 static const double CIRCLE_Z_DEPTH = -70.0;         // wrt ee-frame
-static const double CIRCLE_RADIUS = 70.0;
+static const double CIRCLE_RADIUS = 80.0;
 static const int CIRCLE_LAPS = 10;
 
 // Up-down with legs task
@@ -146,7 +161,11 @@ static int UP_DOWN = 80.0;
 
 /** ------------------------------- Desired poses ------------------------------- */
 
-
+static Eigen::VectorXd desiredHeadPose(6);
+static Eigen::VectorXd desiredRHandPose(6);
+static Eigen::VectorXd desiredLHandPose(6);
+static Eigen::VectorXd desiredRLegPose(6);
+static Eigen::VectorXd desiredLLegPose(6);
 
 //Head
 static const double HEAD_DESIRED_X = 0.0;   // [mm]
@@ -168,7 +187,7 @@ static const double LARM_DESIRED_Y = -HIP_PELVIS_SHIFT+TORSO_SHOULDER_Y+ELBOW_SH
 static const double LARM_DESIRED_Z = FOOT_HEIGHT+HIP_HEIGHT+HIP_TORSO+TORSO_SHOULDER_Z+WRIST_SHIFT_Z-9.9;
 static const double LARM_DESIRED_ROLL = 0.0;
 static const double LARM_DESIRED_PITCH = 0.0;
-static const double LARM_DESIRED_YAW = M_PI_2;
+static const double LARM_DESIRED_YAW = 0.0;
 // Right leg
 static const double RLEG_DESIRED_X = 20.0;
 static const double RLEG_DESIRED_Y = -HIP_PELVIS_SHIFT;
@@ -192,5 +211,25 @@ static const double LLEG_DESIRED_ROLL = 0.0;
 static const double LLEG_DESIRED_PITCH = 0.0;
 static const double LLEG_DESIRED_YAW = 0.0;
 
+
+static void initialization()
+{
+    // Initialize the fixed transformation base-ankle
+    base_ankle << 0.0,      0.0,     1.0,    BASE_ANKLE_X,
+                  0.0,     -1.0,     0.0,    BASE_ANKLE_Y,
+                  1.0,      0.0,     0.0,    BASE_ANKLE_Z,
+                  0.0,      0.0,     0.0,             1.0;
+
+    desiredHeadPose << HEAD_DESIRED_X, HEAD_DESIRED_Y, HEAD_DESIRED_Z,
+            HEAD_DESIRED_ROLL, HEAD_DESIRED_PITCH, HEAD_DESIRED_YAW;
+    desiredRHandPose << RARM_DESIRED_X, RARM_DESIRED_Y, RARM_DESIRED_Z,
+            RARM_DESIRED_ROLL, RARM_DESIRED_PITCH, RARM_DESIRED_YAW;
+    desiredLHandPose << LARM_DESIRED_X, LARM_DESIRED_Y, LARM_DESIRED_Z,
+            LARM_DESIRED_ROLL, LARM_DESIRED_PITCH, LARM_DESIRED_YAW;
+    desiredRLegPose << RLEG_DESIRED_X, RLEG_DESIRED_Y, RLEG_DESIRED_Z,
+            RLEG_DESIRED_ROLL, RLEG_DESIRED_PITCH, RLEG_DESIRED_YAW;
+    desiredLLegPose << LLEG_DESIRED_X, LLEG_DESIRED_Y, LLEG_DESIRED_Z,
+            LLEG_DESIRED_ROLL, LLEG_DESIRED_PITCH, LLEG_DESIRED_YAW;
+}
 
 #endif
