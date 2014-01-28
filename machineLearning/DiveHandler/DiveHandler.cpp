@@ -22,6 +22,7 @@
 
 // Uncomment to have debug information
 //#define DIVEHANDLER_DEBUG
+#define DIVEHANDLER_TRAINING_DEBUG
 #define DIVEHANDLER_TRAINING
 //#define RAND_PERMUTATIONS
 
@@ -66,9 +67,10 @@ void DiveHandler::CoeffsLearner::setCoeffs(const std::vector<float>& _coeffs)
 
 void DiveHandler::CoeffsLearner::setParam(const std::string& _key, float _value)
 {
-    // "Smart" insertion procedure using iterators (C++ 11)
-    std::map<std::string, float>::iterator iter = params.begin();
-    params.insert( iter, std::pair< std::string, float >(_key, _value) );
+    params[_key] = _value;
+//    // "Smart" insertion procedure using iterators (C++ 11)
+//    std::map<std::string, float>::iterator iter = params.begin();
+//    params.insert( std::pair< std::string, float >(_key, _value) );
 }
 
 
@@ -245,23 +247,36 @@ void DiveHandler::PGLearner::updateParams(const std::list<float>& rewards)
 {
     float reward_score = 0.0;
     int discount_exp = 0;
+#ifdef DIVEHANDLER_TRAINING_DEBUG
+    int positives = 0, negatives = 0;
+#endif
+
     std::list<float>::const_iterator i = rewards.begin();
     while (i != rewards.end())
     {
+#ifdef DIVEHANDLER_TRAINING_DEBUG
+        if (*i == POSITIVE_REWARD) ++positives;
+        else ++ negatives;
+#endif
         // Computing discounted rewards
         reward_score += (*i) * pow(GAMMA, discount_exp);
-        ++i; ++discount_exp;
+        ++i; ++discount_exp;        
     }
+#ifdef DIVEHANDLER_TRAINING_DEBUG
+    SPQR_INFO("Positive rewards: " << positives << " out of " << rewards.size());
+    SPQR_INFO("Negative rewards: " << negatives << " out of " << rewards.size());
+    SPQR_INFO("Reward total score: " << reward_score);
+#endif
 
     //Adjusting PG parameters according to the obtained score
-    setParam("epsilon", exp( reward_score / rewards.size() ) * getParam("epsilon"));
+    setParam("epsilon", exp( -reward_score / REWARDS_HISTORY_SIZE ) * getParam("epsilon"));
 
 #ifdef DIVEHANDLER_TRAINING
     SPQR_INFO( "Epsilon value changed to: " << getParam("epsilon") << " according to the obtained rewards. ");
 #endif
 
 #ifdef RAND_PERMUTATIONS
-    setParam("T", exp( reward_score / rewards.size() ) * getParam("T"));
+    setParam("T", exp( -reward_score / REWARDS_HISTORY_SIZE ) * getParam("T"));
 #endif
 }
 
@@ -373,7 +388,12 @@ bool DiveHandler::PGLearner::updateCoeffs()
 
             // Update the coefficients following the gradient direction
             for( unsigned int i=0; i<coeffs_avgGradient.size(); ++i )
+            {
                 coeffs.at(i) += - (coeffs_avgGradient.at(i)/normalization) * ETA;
+
+                // Crop negative coefficients
+                if (coeffs.at(i) < 0) coeffs.at(i) = 0.0;
+            }
 
 #ifdef DIVEHANDLER_TRAINING
             SPQR_INFO("New coefficients: [ " << coeffs.at(0) << ", " << coeffs.at(1) << " ]");
