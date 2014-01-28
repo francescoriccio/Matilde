@@ -6,6 +6,7 @@
 //#define DEBUG_MODE
 //#define TASK_DEBUG
 //#define TASK_MANAGER_DEBUG
+#define LOG
 
 
 // Discrete integration time step
@@ -94,7 +95,7 @@ static Eigen::Matrix4d base_ankle;
 
 /** ---------------------------- Task parameters ---------------------------- */
 
-static const float ACTIVATION_STEP = 1.00;
+static const float ACTIVATION_STEP = 0.1;
 
 // Task names
 static const std::string HEAD_TASK = "Head task";
@@ -121,13 +122,13 @@ static const int LLEG_TASK_PRIORITY = 1;
 static const double K_HEAD = 1.0;
 static const double K_RARM = 1.0;
 static const double K_LARM = 1.0;
-static const double K_RLEG = 0.8;
-static const double K_LLEG = 0.8;
+static const double K_RLEG = 0.6;
+static const double K_LLEG = 0.6;
 
 // Control points number
 static const int HEAD_TASK_NSTEPS = 1;
 static const int RARM_TASK_NSTEPS = 15;
-static const int LARM_TASK_NSTEPS = 8;
+static const int LARM_TASK_NSTEPS = 30;
 static const int RLEG_TASK_NSTEPS = 30;
 static const int LLEG_TASK_NSTEPS = 30;
 
@@ -138,7 +139,7 @@ static const double LARM_TRANSITION_STEP = 1.0;
 static const double RLEG_TRANSITION_STEP = 1.0;
 static const double LLEG_TRANSITION_STEP = 1.0;
 
-//#define RARM_LARM_JOINT_TASK
+#define RARM_LARM_JOINT_TASK
 enum TaskType {
     MIRROR_TASK,
     MIMIC_TASK
@@ -147,7 +148,7 @@ static const TaskType ARMS_TASK = MIRROR_TASK;
 static const double MINIMUM_HANDS_DISTANCE = 100.0;
 
 // Circle trajectory task parameters
-//#define LARM_CIRCLE_TASK
+#define LARM_CIRCLE_TASK
 //#define RARM_CIRCLE_TASK
 static const double CIRCLE_Z_DEPTH = -70.0;         // wrt ee-frame
 static const double CIRCLE_RADIUS = 80.0;
@@ -158,8 +159,8 @@ static const int CIRCLE_LAPS = 10;
 static int UP_DOWN = 80.0;
 
 
-
 /** ------------------------------- Desired poses ------------------------------- */
+
 
 static Eigen::VectorXd desiredHeadPose(6);
 static Eigen::VectorXd desiredRHandPose(6);
@@ -230,6 +231,19 @@ static void initialization()
             RLEG_DESIRED_ROLL, RLEG_DESIRED_PITCH, RLEG_DESIRED_YAW;
     desiredLLegPose << LLEG_DESIRED_X, LLEG_DESIRED_Y, LLEG_DESIRED_Z,
             LLEG_DESIRED_ROLL, LLEG_DESIRED_PITCH, LLEG_DESIRED_YAW;
+
+
+    /*TOFIX*/
+    assert(HEAD_TASK_DIM <=6);
+    desiredHeadPose = desiredHeadPose.head(HEAD_TASK_DIM);
+    assert(RARM_TASK_DIM <=6);
+    desiredRHandPose = desiredRHandPose.head(RARM_TASK_DIM);
+    assert(LARM_TASK_DIM <= 6);
+    desiredLHandPose = desiredLHandPose.head(LARM_TASK_DIM);
+    assert(RLEG_TASK_DIM <= 6);
+//    desiredRLegPose = desiredRLegPose.head(RLEG_TASK_DIM);
+    assert(LLEG_TASK_DIM <= 6);
+//    desiredLLegPose = desiredLLegPose.head(LLEG_TASK_DIM);
 }
 
 #endif

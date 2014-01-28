@@ -180,6 +180,8 @@ public:
     void activate(float activationStep = ACTIVATION_STEP);
     void stop( float decayStep = ACTIVATION_STEP);
 
+    inline float activationValue(){ return parameters.activationValue; }
+
     void set_qd(Eigen::VectorXd new_qd)
     {
         assert(new_qd.size() == parameters.qd_n.size());
@@ -220,6 +222,13 @@ public:
             return (parameters.path_currentStep == parameters.path.size()-1);
     }
 
+    // Set a desired velocity in the task space
+    inline void setTargetVelocity(const Eigen::VectorXd& r)
+    {
+        assert(r.size() == parameters.targetVelocity.size());
+        parameters.targetVelocity = r;
+        parameters.positioningActive = false;
+    }
     // Set a desired pose in the task space
     void setDesiredPose( const Eigen::VectorXd& dp, int n_controlPoints = 1 );
     void setDesiredPose( const Eigen::VectorXd& idp, const Eigen::VectorXd& dp, int n_controlPoints = 1 );

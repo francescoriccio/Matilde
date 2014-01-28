@@ -16,7 +16,8 @@
     - Simulations
 */
 
-#define INFO(x) std::cerr << "\033[22;34;1m" << "[r2module] " << x << "\033[0m" << std::endl;
+//#define INFO(x) std::cerr << "\033[22;34;1m" << "[r2module] " << x << "\033[0m" << std::endl;
+#define INFO(x) std::cout << x << std::endl;
 
 namespace AL
 {
@@ -208,6 +209,39 @@ void R2Module::init()
   taskManager.createTask(RIGHT_LEG, Rsupporting);
   taskManager.createTask(LEFT_LEG, Lsupporting);
 
+//  Task* rleg1 = new Task(RLEG_TASK_DIM, RLEG_CHAIN_SIZE, 1, *theKinChainRightLeg, 0, soth::Bound::BOUND_INF);
+//  Task* lleg1 = new Task(LLEG_TASK_DIM, LLEG_CHAIN_SIZE, 1, *theKinChainLeftLeg, 0, soth::Bound::BOUND_INF);
+//  Task* rleg2 = new Task(RLEG_TASK_DIM, RLEG_CHAIN_SIZE, 1, *theKinChainRightLeg, 0, soth::Bound::BOUND_SUP);
+//  Task* lleg2 = new Task(LLEG_TASK_DIM, LLEG_CHAIN_SIZE, 1, *theKinChainLeftLeg, 0, soth::Bound::BOUND_SUP);
+//  taskManager.createTask("rleg1",rleg1);
+//  taskManager.createTask("lleg1", lleg1);
+//  taskManager.createTask("rleg2",rleg2);
+//  taskManager.createTask("lleg2", lleg2);
+
+    Task* Rbound = new Task(RARM_TASK_DIM, RARM_CHAIN_SIZE+LLEG_CHAIN_SIZE,
+                             2, *theKinChain_LLBase + *CoM_RightArm + *theKinChainRightArm,
+                             LLEG_CHAIN_SIZE, soth::Bound::BOUND_INF);
+    taskManager.createTask("Rbound", Rbound);
+
+//  Task* Rpointing2 = new Task(RARM_TASK_DIM, RARM_CHAIN_SIZE+LLEG_CHAIN_SIZE,
+//                             4, *theKinChain_LLBase + *CoM_RightArm + *theKinChainRightArm,
+//                             LLEG_CHAIN_SIZE);
+//  taskManager.createTask("jesus",Rpointing2);
+
+//  Task* Lpointing1 = new Task(3, LARM_CHAIN_SIZE, 2, *theKinChainLeftArm);
+//  Task* Lpointing2 = new Task(3, LARM_CHAIN_SIZE, 3, *theKinChainLeftArm);
+//  Task* Lpointing3 = new Task(3, LARM_CHAIN_SIZE, 3, *theKinChainLeftArm);
+//  taskManager.createTask("LJesus",Lpointing1);
+//  taskManager.createTask("LMary",Lpointing2);
+//  taskManager.createTask("LHolySpirit",Lpointing3);
+
+//  Task* Rpointing1 = new Task(3, RARM_CHAIN_SIZE, 2, *theKinChainRightArm);
+//  Task* Rpointing2 = new Task(3, RARM_CHAIN_SIZE, 3, *theKinChainRightArm);
+//  Task* Rpointing3 = new Task(3, RARM_CHAIN_SIZE, 3, *theKinChainRightArm);
+//  taskManager.createTask("RJesus",Rpointing1);
+//  taskManager.createTask("RMary",Rpointing2);
+//  taskManager.createTask("RHolySpirit",Rpointing3);
+
 #ifdef DEBUG_MODE
   INFO("Initializing tasks: ");
   INFO("- Head task, with priority " << looking->getPriority());
@@ -217,6 +251,7 @@ void R2Module::init()
   INFO("- Left leg task, with priority " << Lsupporting->getPriority());
 #endif
   }
+
 }
 
 /*
@@ -296,7 +331,7 @@ void R2Module::getCurrentFrame()
   if ((char) cv::waitKey(33) != 27)
       cv::imshow("Frame", fcurrImageHeader);
 
-  // Release the proxystd::cout<<"jesus: \n"<<desiredLHandPose<<std::endl;
+  // Release the proxy
   fCamProxy->releaseImage(fVideoClientName);
 }
 
@@ -343,6 +378,25 @@ void R2Module::motion()
     taskManager.task(RIGHT_LEG).activate(RLEG_TRANSITION_STEP);
     taskManager.task(LEFT_LEG).activate(LLEG_TRANSITION_STEP);
 
+    /****/
+//    taskManager.task("rleg1").activate(1.0);
+//    taskManager.task("lleg1").activate(1.0);
+//    taskManager.task("rleg2").activate(1.0);
+//    taskManager.task("lleg2").activate(1.0);
+
+//    taskManager.task("jesus").stop(1.0);
+
+    taskManager.task("Rbound").stop(1.0);
+
+//    taskManager.task("LJesus").activate();
+//    taskManager.task("LMary").activate();
+//    taskManager.task("LHolySpirit").activate();
+//    taskManager.task("RJesus").activate();
+//    taskManager.task("RMary").activate();
+//    taskManager.task("RHolySpirit").activate();
+
+    /****/
+
     Eigen::Matrix4d h_CoMRL, h_CoMLL;
     CoM_RightLeg->forward(&h_CoMRL);
     CoM_LeftLeg->forward(&h_CoMLL);
@@ -354,29 +408,85 @@ void R2Module::motion()
     taskManager.task(LEFT_ARM).set_baseTransform(base_ankle);
     taskManager.task(RIGHT_ARM).set_baseTransform(base_ankle);
 
+    /****/
+//    taskManager.task("rleg1").set_baseTransform(h_CoMRL);
+//    taskManager.task("lleg1").set_baseTransform(h_CoMLL);
+//    taskManager.task("rleg2").set_baseTransform(h_CoMRL);
+//    taskManager.task("lleg2").set_baseTransform(h_CoMLL);
+
+    taskManager.task("Rbound").set_baseTransform(base_ankle);
+
+//    taskManager.task("jesus").set_baseTransform(base_ankle);
+
+//    taskManager.task("LJesus").set_baseTransform(base_ankle);
+//    taskManager.task("LMary").set_baseTransform(base_ankle);
+//    taskManager.task("LHolySpirit").set_baseTransform(base_ankle);
+//    taskManager.task("RJesus").set_baseTransform(base_ankle);
+//    taskManager.task("RMary").set_baseTransform(base_ankle);
+//    taskManager.task("RHolySpirit").set_baseTransform(base_ankle);
+
+//    taskManager.task("LJesus").setTargetVelocity(Eigen::Vector3d::UnitX()*50);
+//    taskManager.task("LMary").setTargetVelocity(Eigen::Vector3d::UnitZ()*50);
+//    taskManager.task("LHolySpirit").setTargetVelocity(Eigen::Vector3d::UnitY()*-50);
+//    taskManager.task("RJesus").setTargetVelocity(Eigen::Vector3d::UnitX()*50);
+//    taskManager.task("RMary").setTargetVelocity(Eigen::Vector3d::UnitZ()*-50);
+//    taskManager.task("RHolySpirit").setTargetVelocity(Eigen::Vector3d::UnitY()*-50);
+
+    // Tasks rleg1-2, lleg1-2
+//    Eigen::VectorXd desiredRLegPose2 = desiredRLegPose;
+//    desiredRLegPose2(2) += 100.0;
+//    Eigen::VectorXd desiredLLegPose2 = desiredLLegPose;
+//    desiredLLegPose2(2) += 100.0;
+//    taskManager.task("rleg1").setDesiredPose(desiredRLegPose, 1);
+//    taskManager.task("lleg1").setDesiredPose(desiredLLegPose, 1);
+//    taskManager.task("rleg2").setDesiredPose(desiredRLegPose2, 1);
+//    taskManager.task("lleg2").setDesiredPose(desiredLLegPose2, 1);
+
+    // Task jesus
+//    Eigen::VectorXd desiredRA2pose(3);
+//    desiredRA2pose << 0.0, desiredRHandPose(1), 618.0;
+//    taskManager.task("jesus").setDesiredPose(desiredRA2pose, RARM_TASK_NSTEPS);
+
+    // Task Rbound
+    Eigen::VectorXd desiredRHandPose2 = desiredRHandPose;
+    desiredRHandPose2(0) = -Eigen::Infinity;
+    desiredRHandPose2(1) = RARM_DESIRED_Y;
+    desiredRHandPose2(2) = -Eigen::Infinity;
+    taskManager.task("Rbound").setDesiredPose(desiredRHandPose2);
+
+    /****/
+
+#ifndef UP_DOWN_TASK
     if(taskManager.task(RIGHT_LEG).taskStatus() != inactive)
-        taskManager.task(RIGHT_LEG).setDesiredPose( desiredRLegPose.head(RLEG_TASK_DIM), RLEG_TASK_NSTEPS );
+        taskManager.task(RIGHT_LEG).setDesiredPose( desiredRLegPose, RLEG_TASK_NSTEPS );
 
     if(taskManager.task(LEFT_LEG).taskStatus() != inactive)
-        taskManager.task(LEFT_LEG).setDesiredPose( desiredLLegPose.head(LLEG_TASK_DIM), LLEG_TASK_NSTEPS );
+        taskManager.task(LEFT_LEG).setDesiredPose( desiredLLegPose, LLEG_TASK_NSTEPS );
+#else
+    if(taskManager.task(RIGHT_LEG).taskStatus() != inactive)
+        taskManager.task(RIGHT_LEG).setDesiredPose( desiredRLegPose, 5 );
+
+    if(taskManager.task(LEFT_LEG).taskStatus() != inactive)
+        taskManager.task(LEFT_LEG).setDesiredPose( desiredLLegPose, 5 );
+#endif
 
     if(taskManager.task(HEAD_TASK).taskStatus() != inactive)
-        taskManager.task(HEAD_TASK).setDesiredPose( desiredHeadPose.head(HEAD_TASK_DIM), HEAD_TASK_NSTEPS );
+        taskManager.task(HEAD_TASK).setDesiredPose( desiredHeadPose, HEAD_TASK_NSTEPS );
 
     if(taskManager.task(LEFT_ARM).taskStatus() != inactive)
 #ifndef LARM_CIRCLE_TASK
-        taskManager.task(LEFT_ARM).setDesiredPose( desiredLHandPose.head(LARM_TASK_DIM), LARM_TASK_NSTEPS );
+        taskManager.task(LEFT_ARM).setDesiredPose( desiredLHandPose, LARM_TASK_NSTEPS );
 #else
-        taskManager.task(LEFT_ARM).circularPathGenerator(desiredLHandPose.head(LARM_TASK_DIM), CIRCLE_Z_DEPTH,
+        taskManager.task(LEFT_ARM).circularPathGenerator(desiredLHandPose, CIRCLE_Z_DEPTH,
                                                         LARM_TASK_NSTEPS, CIRCLE_RADIUS, CIRCLE_LAPS );
 #endif
 
 #ifndef RARM_LARM_JOINT_TASK
     if(taskManager.task(RIGHT_ARM).taskStatus() != inactive)
 #ifndef RARM_CIRCLE_TASK
-        taskManager.task(RIGHT_ARM).setDesiredPose(desiredRHandPose.head(RARM_TASK_DIM), RARM_TASK_NSTEPS );
+        taskManager.task(RIGHT_ARM).setDesiredPose(desiredRHandPose, RARM_TASK_NSTEPS );
 #else
-        taskManager.task(RIGHT_ARM).circularPathGenerator(desiredRHandPose.head(RARM_TASK_DIM), CIRCLE_Z_DEPTH,
+        taskManager.task(RIGHT_ARM).circularPathGenerator(desiredRHandPose, CIRCLE_Z_DEPTH,
                                                          RARM_TASK_NSTEPS, CIRCLE_RADIUS, CIRCLE_LAPS );
 #endif
 #endif
@@ -390,28 +500,85 @@ void R2Module::motion()
 #endif
     INFO("Desired right foot position in space: [\n" << desiredRLegPose << "]");
     INFO("Desired Hip position in space: [\n" << desiredLLegPose << "]");
+
+#endif
+#ifdef UP_DOWN_TASK
+    int updown_counter = 0;
+    int mary_holyspirit_flag = 1;
 #endif
 
+    int counter = 0;
     // Main loop
     while(true)
     {
+#ifdef LOG
+        ++counter;
+        INFO("----------------------- iteration: "<<counter<<" ----------------------------");
+#endif
+        if(counter == 35)
+            taskManager.task("Rbound").activate(0.1);
+
+//            taskManager.changePriority("Rbound", 2);
+
+#ifdef DEBUG_MODE
+        if (1/*counter == 40*/)
+        {
+//            Eigen::VectorXd desiredRLegPose = taskManager.task(RIGHT_LEG).getTargetPose();
+//            Eigen::VectorXd desiredLLegPose = taskManager.task(LEFT_LEG).getTargetPose();
+//            desiredRLegPose(2) += 100.0;
+//            desiredLLegPose(2) += 100.0;
+
+//            taskManager.task(LEFT_LEG).setDesiredPose(desiredLLegPose, LLEG_TASK_NSTEPS);
+//            taskManager.task(RIGHT_LEG).setDesiredPose(desiredRLegPose, RLEG_TASK_NSTEPS);
+//            taskManager.changePriority("Rbound", 2);
+//            INFO("Changing Rbound task!");
+        }
+#endif
 
 #ifdef UP_DOWN_TASK
         if ( (taskManager.task(RIGHT_LEG).done()) && (taskManager.task(LEFT_LEG).done()) )
         {
-            UP_DOWN *= -1;
+            if (updown_counter == 1)
+            {
+                UP_DOWN *= -1;
 
-            Eigen::VectorXd desiredRLegPose = taskManager.task(RIGHT_LEG).getTargetPose();
-            Eigen::VectorXd desiredLLegPose = taskManager.task(LEFT_LEG).getTargetPose();
-            desiredRLegPose(2) += UP_DOWN;
-            desiredLLegPose(2) += UP_DOWN;
-            taskManager.task(RIGHT_LEG).setDesiredPose(desiredRLegPose.head(RLEG_TASK_DIM), RLEG_TASK_NSTEPS);
-            taskManager.task(LEFT_LEG).setDesiredPose(desiredLLegPose.head(LLEG_TASK_DIM), LLEG_TASK_NSTEPS);
+                Eigen::VectorXd desiredRLegPose = taskManager.task(RIGHT_LEG).getTargetPose();
+                Eigen::VectorXd desiredLLegPose = taskManager.task(LEFT_LEG).getTargetPose();
+                desiredRLegPose(2) += UP_DOWN;
+                desiredLLegPose(2) += UP_DOWN;
+
+                taskManager.task(RIGHT_LEG).setDesiredPose(desiredRLegPose, RLEG_TASK_NSTEPS);
+                taskManager.task(LEFT_LEG).setDesiredPose(desiredLLegPose, LLEG_TASK_NSTEPS);
+
+                if (mary_holyspirit_flag == 1)
+                {
+                    taskManager.changePriority("LJesus",3);
+                    taskManager.changePriority("LHolySpirit",2);
+                    taskManager.changePriority("RJesus",3);
+                    taskManager.changePriority("RHolySpirit",2);
+//                    taskManager.task("LMary").stop(1.0);
+                    mary_holyspirit_flag = 2;
+                }
+                else if (mary_holyspirit_flag == 2)
+                {
+                    taskManager.changePriority("LJesus",2);
+                    taskManager.changePriority("LHolySpirit",3);
+                    taskManager.changePriority("RJesus",2);
+                    taskManager.changePriority("RHolySpirit",3);
+//                    taskManager.task("LMary").stop(1.0);
+                    mary_holyspirit_flag = 1;
+                }
+
+                updown_counter = 0;
+            }
+            else
+                ++updown_counter;
         }
 #endif
         // Retrieve current robot configuration
         Eigen::VectorXd q(JOINTS_NUM);
         q = getConfiguration();
+        INFO("current configuration: \n" << q);
 
     #ifdef DEBUG_MODE
         INFO("\nCurrent joint configuration:");

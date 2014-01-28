@@ -548,7 +548,7 @@ namespace soth
 		G1.transpose() >> M;
 		G1.transpose() >> Ln;
 		W << G1;
-		assert( std::abs(ML_(Irn(j),sizeM))<EPSILON*EPSILON );
+//		assert( std::abs(ML_(Irn(j),sizeM))<EPSILON*EPSILON );
 	      }
 
 	    /* Commute the lines in L. */

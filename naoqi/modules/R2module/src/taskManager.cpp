@@ -11,8 +11,8 @@
 
 #include "r2Module.h"
 
-#define INFO(x) std::cerr << "\033[22;34;1m" << "[TaskManager] " << x << "\033[0m" << std::endl;
-
+//#define INFO(x) std::cerr << "\033[22;34;1m" << "[TaskManager] " << x << "\033[0m" << std::endl;
+#define INFO(x) std::cout << x << std::endl;
 using namespace AL;
 
 void R2Module::TaskManager::taskUpdate(const std::string& taskName, const Eigen::VectorXd& q)
@@ -31,26 +31,47 @@ void R2Module::TaskManager::taskUpdate(const std::string& taskName, const Eigen:
 #endif
     }
 
-    else if( (taskName == LEFT_ARM) )
+    else if(taskName == LEFT_ARM)
     {
         // Left arm task update
-        Eigen::VectorXd q_LA (LLEG_CHAIN_SIZE+LARM_CHAIN_SIZE);
+        Eigen::VectorXd q_LA (LLEG_CHAIN_SIZE+RARM_CHAIN_SIZE);
         q_LA << q.segment<LLEG_CHAIN_SIZE>(LLEG_CHAIN_BEGIN),
                 q.segment<LARM_CHAIN_SIZE>(LARM_CHAIN_BEGIN);
         ( taskMap[taskName] )->update( q_LA, Eigen::VectorXd::Zero(LARM_TASK_DIM), K_LARM );
 
-#ifdef DEBUG_MODE
-        INFO("Left arm task constraint equation: ");
-        INFO(std::endl << *( taskMap[taskName] ) );
-#endif
     }
+//    else if( (taskName == "LHolySpirit") || (taskName == "LJesus") || (taskName == "LMary") )
+//    {
+//        // Left arm task update
+//        Eigen::VectorXd q_LA (LARM_CHAIN_SIZE);
+//        q_LA << q.segment<LARM_CHAIN_SIZE>(LARM_CHAIN_BEGIN);
+//        ( taskMap[taskName] )->update( q_LA, Eigen::VectorXd::Zero(LARM_TASK_DIM), K_LARM );
 
-    else if( (taskName == RIGHT_ARM) )
+//#ifdef DEBUG_MODE
+//        INFO("Left arm task constraint equation: ");
+//        INFO(std::endl << *( taskMap[taskName] ) );
+//#endif
+//    }
+//    else if( (taskName == "RHolySpirit") || (taskName == "RJesus") || (taskName == "RMary") )
+//    {
+//        // Left arm task update
+//        Eigen::VectorXd q_RA (RARM_CHAIN_SIZE);
+//        q_RA << q.segment<RARM_CHAIN_SIZE>(RARM_CHAIN_BEGIN);
+//        ( taskMap[taskName] )->update( q_RA, Eigen::VectorXd::Zero(RARM_TASK_DIM), K_RARM );
+
+//#ifdef DEBUG_MODE
+//        INFO("Right arm task constraint equation: ");
+//        INFO(std::endl << *( taskMap[taskName] ) );
+//#endif
+//    }
+
+    else if( (taskName == RIGHT_ARM) || (taskName == "Rbound") )
     {
         // Right arm task update
         Eigen::VectorXd q_RA (LLEG_CHAIN_SIZE+RARM_CHAIN_SIZE);
         q_RA << q.segment<LLEG_CHAIN_SIZE>(LLEG_CHAIN_BEGIN),
                 q.segment<RARM_CHAIN_SIZE>(RARM_CHAIN_BEGIN);
+
 #ifdef RARM_LARM_JOINT_TASK
         if (taskName == "Rbound")
             ( taskMap[taskName] )->update( q_RA, Eigen::VectorXd::Zero(RARM_TASK_DIM), K_RARM );
@@ -83,6 +104,7 @@ void R2Module::TaskManager::taskUpdate(const std::string& taskName, const Eigen:
                 for (int i=3; i < LARM_TASK_DIM; ++i)
                     desiredRHandVel(i) = -desiredRHandVel(i);
 
+            ( taskMap[taskName] )->setTargetVelocity(desiredRHandVel);
             ( taskMap[taskName] )->update( q_RA, desiredRHandVel, K_RARM );
         }
 #else
@@ -94,23 +116,32 @@ void R2Module::TaskManager::taskUpdate(const std::string& taskName, const Eigen:
         INFO(std::endl << *( taskMap[taskName] ) );
 #endif
     }
-
+//    else if ( (taskName == "rleg1") || (taskName == "rleg2") )
+//        ( taskMap[taskName] )->update( q.segment<RLEG_CHAIN_SIZE>(RLEG_CHAIN_BEGIN), Eigen::VectorXd::Zero(RLEG_TASK_DIM), K_RLEG );
     else if( (taskName == RIGHT_LEG) )
     {
         // Right leg task update
+#ifndef UP_DOWN_TASK
         ( taskMap[taskName] )->update( q.segment<RLEG_CHAIN_SIZE>(RLEG_CHAIN_BEGIN), Eigen::VectorXd::Zero(RLEG_TASK_DIM), K_RLEG );
+#else
+        ( taskMap[taskName] )->update( q.segment<RLEG_CHAIN_SIZE>(RLEG_CHAIN_BEGIN), Eigen::VectorXd::Zero(RLEG_TASK_DIM), 0.4 );
+#endif
 
 #ifdef DEBUG_MODE
         INFO("Right leg task constraint equation: ");
         INFO(std::endl << *( taskMap[taskName] ) );
 #endif
     }
-
+//    else if ( (taskName == "lleg1") || (taskName == "lleg2") )
+//        ( taskMap[taskName] )->update( q.segment<LLEG_CHAIN_SIZE>(LLEG_CHAIN_BEGIN), Eigen::VectorXd::Zero(LLEG_TASK_DIM), K_LLEG );
     else if( (taskName == LEFT_LEG) )
     {
+#ifndef UP_DOWN_TASK
         // Left leg task update
         ( taskMap[taskName] )->update( q.segment<LLEG_CHAIN_SIZE>(LLEG_CHAIN_BEGIN), Eigen::VectorXd::Zero(LLEG_TASK_DIM), K_LLEG );
-
+#else
+        ( taskMap[taskName] )->update( q.segment<RLEG_CHAIN_SIZE>(RLEG_CHAIN_BEGIN), Eigen::VectorXd::Zero(LLEG_TASK_DIM), 0.4 );
+#endif
 #ifdef DEBUG_MODE
         INFO("Left leg task constraint equation: ");
         INFO(std::endl << *( taskMap[taskName] ) );
@@ -329,7 +360,7 @@ void R2Module::TaskManager::exec(const Eigen::VectorXd& q, Eigen::VectorXd* qdot
     std::map<std::string,Task*>::const_iterator watcher = taskMap.begin();
     while(watcher != taskMap.end())
     {
-        if ((watcher->first == "LJesus") || (watcher->first == "LMary"))
+//        if ((watcher->first == "Rbound") || (watcher->first == RIGHT_ARM) )
         {
             INFO(watcher->first << ": ");
             INFO("Status = " << (watcher->second)->taskStatus());
@@ -388,4 +419,77 @@ void R2Module::TaskManager::exec(const Eigen::VectorXd& q, Eigen::VectorXd* qdot
 
     // Compute the final solution
     computeCompleteSolution(q, partialSolution, qdot);
+
+#ifdef LOG
+    Eigen::VectorXd qdot_LOG(JOINTS_NUM);
+    qdot_LOG = *qdot;
+    std::map<std::string,Task*>::const_iterator logger = taskMap.begin();
+    while(logger != taskMap.end())
+    {
+        if((logger->first == LEFT_ARM))
+        {
+            INFO("-------- task name: "<< logger->first <<" --------");
+
+            INFO("task status: " << (logger->second)->taskStatus() );
+            INFO("priority: " << (logger->second)->getPriority());
+            INFO("activation function: " << (logger->second)->activationValue());
+
+            Eigen::Vector3d ee_position_LOG;
+            Eigen::Matrix4d h_LOG;
+            ((logger->second)->kinChain())->forward(&h_LOG);
+            ee_position_LOG = h_LOG.topRightCorner(3,1);
+
+            Eigen::Vector3d velocity;
+            Eigen::Vector3d velocityError_LOG;
+            Eigen::Vector3d velocityTarget_LOG;
+            velocityTarget_LOG = (logger->second)->getTargetVelocity();
+            Eigen::MatrixXd j_LOG;
+            ((logger->second)->kinChain())->differential(&j_LOG);
+
+            Eigen::VectorXd qdot_LA (LLEG_CHAIN_SIZE+LARM_CHAIN_SIZE);
+            qdot_LA << qdot_LOG.segment<LLEG_CHAIN_SIZE>(LLEG_CHAIN_BEGIN),
+                    qdot_LOG.segment<LARM_CHAIN_SIZE>(LARM_CHAIN_BEGIN);
+            velocity = (j_LOG*qdot_LA).head(3);
+            velocityError_LOG = velocityTarget_LOG - velocity;
+
+            INFO("end effector position [" << ee_position_LOG(0) <<", "<<ee_position_LOG(1)<<", "<<ee_position_LOG(2)<<"]");
+            INFO("velocity [" << velocity(0) <<", "<<velocity(1)<<", "<<velocity(2)<<"]");
+            INFO("desired velocity [" << velocityTarget_LOG(0) <<", "<<velocityTarget_LOG(1)<<", "<<velocityTarget_LOG(2)<<"]");
+            INFO("velocity error [" << velocityError_LOG(0) <<", "<<velocityError_LOG(1) <<", "<<velocityError_LOG(2)<<"]");
+            INFO("velocity error norm: "<< velocityError_LOG.norm());
+        }
+        if( (logger->first == RIGHT_ARM) || (logger->first == "Rbound") )
+        {
+            INFO("-------- task name: "<< logger->first <<" --------");
+
+            INFO("task status: " << (logger->second)->taskStatus() );
+            INFO("priority: " << (logger->second)->getPriority());
+            INFO("activation function: " << (logger->second)->activationValue());
+
+            Eigen::Vector3d ee_position_LOG;
+            Eigen::Matrix4d h_LOG;
+            ((logger->second)->kinChain())->forward(&h_LOG);
+            ee_position_LOG = h_LOG.topRightCorner(3,1);
+            Eigen::Vector3d velocity;
+            Eigen::Vector3d velocityError_LOG;
+            Eigen::Vector3d velocityTarget_LOG;
+            velocityTarget_LOG = (logger->second)->getTargetVelocity();
+            Eigen::MatrixXd j_LOG;
+            ((logger->second)->kinChain())->differential(&j_LOG);
+            Eigen::VectorXd qdot_RA (LLEG_CHAIN_SIZE+RARM_CHAIN_SIZE);
+            qdot_RA << qdot_LOG.segment<LLEG_CHAIN_SIZE>(LLEG_CHAIN_BEGIN),
+                    qdot_LOG.segment<RARM_CHAIN_SIZE>(RARM_CHAIN_BEGIN);
+            velocity = (j_LOG*qdot_RA).head(3);
+            velocityError_LOG = velocityTarget_LOG - velocity;
+
+            INFO("end effector position [" << ee_position_LOG(0) <<", "<<ee_position_LOG(1)<<", "<<ee_position_LOG(2)<<"]");
+            INFO("velocity [" << velocity(0) <<", "<<velocity(1)<<", "<<velocity(2)<<"]");
+            INFO("desired velocity [" << velocityTarget_LOG(0) <<", "<<velocityTarget_LOG(1)<<", "<<velocityTarget_LOG(2)<<"]");
+            INFO("velocity error [" << velocityError_LOG(0) <<", "<<velocityError_LOG(1) <<", "<<velocityError_LOG(2)<<"]");
+            INFO("velocity error norm: "<< velocityError_LOG.norm());
+        }
+
+        ++logger;
+    }
+#endif
 }

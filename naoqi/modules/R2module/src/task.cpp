@@ -563,8 +563,6 @@ void Task::update( const Eigen::VectorXd& _q, const Eigen::VectorXd& desiredVel,
         // Equality task with velocity control in the Cartesian space
         else if ( bounds[0].getType() == soth::Bound::BOUND_TWIN )
         {
-            parameters.targetVelocity = K * desiredVel;
-
             // Updating the bound vector with the task error + a feedforward term
             for(int i=0; i<bounds.rows(); ++i)
                 bounds[i] = parameters.targetVelocity(i) * parameters.activationValue +
@@ -623,7 +621,6 @@ void Task::update( const Eigen::VectorXd& _q, const Eigen::VectorXd& desiredVel,
         // Equality task with velocity control in the joint space
         else if ( bounds[0].getType() == soth::Bound::BOUND_TWIN )
         {
-            parameters.targetVelocity = K * desiredVel;
             // Updating the bound vector with the task error + a feedforward term
             for(int i=0; i<bounds.rows(); ++i)
             {

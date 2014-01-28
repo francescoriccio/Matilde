@@ -19,12 +19,14 @@ set(_srcs
   ${include_path}/libmath/Rutils.h
   ${include_path}/task.h
   ${include_path}/r2Module.h
+  ${include_path}/configParams.h
 
   ${src_path}/configReader.cpp
   ${src_path}/libmath/transform.cpp
   ${src_path}/libmath/kinChain.cpp
   ${src_path}/libmath/Rutils.cpp
   ${src_path}/task.cpp
+  ${src_path}/taskManager.cpp
   ${src_path}/r2ModuleMain.cpp
 
   ${src_path}/r2Module.cpp
