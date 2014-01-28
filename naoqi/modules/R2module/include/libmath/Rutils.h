@@ -97,7 +97,7 @@ void homogenize(const Eigen::Matrix3d& m, const Eigen::Vector3d& v, Eigen::Matri
  * The result is stored in 'mx'.
  */
 void Hx(double a, const Eigen::Vector3d& shift, Eigen::Matrix4d* mx);
-Eigen::Matrix4d homX(double a, const Eigen::Vector3d& shift);
+Eigen::Matrix4d homX(double a, const Eigen::Vector3d& shift = Eigen::Vector3d::Zero());
 
 /*
  * Compute the 4x4 homogeneous transformation composed of:
@@ -106,7 +106,7 @@ Eigen::Matrix4d homX(double a, const Eigen::Vector3d& shift);
  * The result is stored in 'mx'.
  */
 void Hy(double a, const Eigen::Vector3d& shift, Eigen::Matrix4d* my);
-Eigen::Matrix4d homY(double a, const Eigen::Vector3d& shift);
+Eigen::Matrix4d homY(double a, const Eigen::Vector3d& shift = Eigen::Vector3d::Zero());
 
 /*
  * Compute the 4x4 homogeneous transformation composed of:
@@ -115,7 +115,9 @@ Eigen::Matrix4d homY(double a, const Eigen::Vector3d& shift);
  * The result is stored in 'mx'.
  */
 void Hz(double a, const Eigen::Vector3d& shift, Eigen::Matrix4d* mz);
-Eigen::Matrix4d homZ(double a, const Eigen::Vector3d& shift);
+Eigen::Matrix4d homZ(double a, const Eigen::Vector3d& shift = Eigen::Vector3d::Zero());
+
+Eigen::Matrix4d hTranslation(const Eigen::Vector3d& shift);
 
 /*
  * Compute the Moore-Penrose pseudo-inversion of matrix 'm' using SVD decomposition.

@@ -8,56 +8,25 @@
 
 #include "r2Module.h"
 #include "configReader.h"
+#include "configParams.h"
 
 /**
   TODO:
-    - check transformations
-    - task formalization
+    - rearraging priorities
+    - Simulations
 */
 
-#define INFO(x) std::cerr << "\033[22;34;1m" << "[r2module] " << x << "\033[0m" << std::endl;
-//#define DEBUG_MODE
-#define TEST_KINCHAIN
-
-// Nao joints number
-#define JOINTS_NUM 24
-// Nao kinematic chain sizes
-#define HEAD 2
-#define R_ARM 5
-#define L_ARM 5
-#define R_LEG 6
-#define L_LEG 6
-
-// Position task control gain
-#define K_HEAD 1
-// Discrete integration time step
-#define TIME_STEP 1
+//#define INFO(x) std::cerr << "\033[22;34;1m" << "[r2module] " << x << "\033[0m" << std::endl;
+#define INFO(x) std::cout << x << std::endl;
 
 namespace AL
 {
-
-// Config (.cfg) files directory and paths
-static const std::string CONFIG_PATH = "/../config/";
-static const std::string JOINT_BOUNDS_CFG = "joints_params.cfg";
-static const std::string LEFT_LEG_CFG = "dh_leftLeg.cfg";
-static const std::string LEFT_ARM_CFG = "dh_leftArm.cfg";
-static const std::string RIGHT_LEG_CFG = "dh_rightLeg.cfg";
-static const std::string RIGHT_ARM_CFG = "dh_rightArm.cfg";
-static const std::string HEAD_CFG = "dh_head.cfg";
-
-#ifdef TEST_KINCHAIN
-static Rmath::KinChain* theKinChain_TMP;
-static Eigen::Matrix4d H_TMP;
-static Eigen::MatrixXd J_TMP;
-static Eigen::VectorXd q_TMP(L_ARM);
-static Eigen::Vector3d r;
-#endif
 
 /*
  * Module constructor using Naoqi API methods.
  */
 R2Module::R2Module( boost::shared_ptr<ALBroker> pBroker, const std::string& pName ):
-  ALModule(pBroker , pName), fRegisteredToVideoDevice(false)
+    ALModule(pBroker , pName), fRegisteredToVideoDevice(false), taskManager(this)
 {
   // Module description
   setModuleDescription("Robotics2 Project");
@@ -99,18 +68,6 @@ R2Module::~R2Module()
     // Destroy thread
     pthread_cancel( motionThreadId );
     pthread_cancel( cameraThreadId );
-
-    // Deallocate memory
-    if (jointLimits) delete jointLimits;
-    // Cleaning up containers
-    std::map<std::string, Task*>::iterator destroyer = taskMap.begin();
-    while (destroyer != taskMap.end())
-    {
-        if(destroyer->second) delete destroyer->second;
-        ++destroyer;
-    }
-    taskMap.clear();
-    taskSet.clear();
 }
 
 /*
@@ -119,20 +76,46 @@ R2Module::~R2Module()
  */
 void R2Module::init()
 {
-  // Initialize the base kinematic chain (from Nao's left foot to body center)
-  ConfigReader theConfigReader( CONFIG_PATH + LEFT_LEG_CFG, CONFIG_PATH + JOINT_BOUNDS_CFG );
-  theConfigReader.storeJointsID(&jointID);
-  theKinChainLeftLeg = new Rmath::KinChain( theConfigReader, HEAD + R_ARM + L_ARM + R_LEG,
-                                            HEAD + R_ARM + L_ARM + R_LEG + L_LEG);
+    // Static initialization of parameters
+    initialization();
 
-#ifdef TEST_KINCHAIN
-  // Initialize the test kinematic chain (left arm)
-  ConfigReader theConfigReader_TMP( CONFIG_PATH + LEFT_ARM_CFG, CONFIG_PATH + JOINT_BOUNDS_CFG );
-  theKinChain_TMP = new Rmath::KinChain( theConfigReader_TMP, HEAD + R_ARM, HEAD + R_ARM + L_ARM);
-#endif
+    ConfigReader theConfigReader(CONFIG_PATH + JOINT_BOUNDS_CFG);
+    theConfigReader.storeJointsID(&jointID);
+
+    // Initialize the base kinematic chain (from Nao's left foot to body center)
+    theConfigReader.setKinChain(CONFIG_PATH + LEFT_LEG_BASE_CFG);
+    theKinChain_LLBase = new Rmath::KinChain( theConfigReader );
+
+    // Initialize the base kinematic chain (from Nao's right foot to body center)
+    theConfigReader.setKinChain(CONFIG_PATH + RIGHT_LEG_BASE_CFG);
+    theKinChain_RLBase = new Rmath::KinChain( theConfigReader );
+
+    // initialize kinChain transofrmation w.r.t. CoM
+    theConfigReader.setKinChain(CONFIG_PATH + COM_HEAD_CFG);
+    CoM_Head = new Rmath::KinChain( theConfigReader );
+    theConfigReader.setKinChain(CONFIG_PATH + COM_LEFT_ARM_CFG);
+    CoM_LeftArm = new Rmath::KinChain( theConfigReader );
+    theConfigReader.setKinChain(CONFIG_PATH + COM_RIGHT_ARM_CFG);
+    CoM_RightArm = new Rmath::KinChain( theConfigReader );
+    theConfigReader.setKinChain(CONFIG_PATH + COM_RIGHT_LEG_CFG);
+    CoM_RightLeg= new Rmath::KinChain( theConfigReader );
+    theConfigReader.setKinChain(CONFIG_PATH + COM_LEFT_LEG_CFG);
+    CoM_LeftLeg = new Rmath::KinChain( theConfigReader );
+
+    // Initialize kinChains
+    theConfigReader.setKinChain(CONFIG_PATH + LEFT_LEG_CFG);
+    theKinChainLeftLeg = new Rmath::KinChain( theConfigReader );
+    theConfigReader.setKinChain(CONFIG_PATH + RIGHT_LEG_CFG);
+    theKinChainRightLeg = new Rmath::KinChain( theConfigReader );
+    theConfigReader.setKinChain(CONFIG_PATH + LEFT_ARM_CFG);
+    theKinChainLeftArm = new Rmath::KinChain( theConfigReader );
+    theConfigReader.setKinChain(CONFIG_PATH + RIGHT_ARM_CFG);
+    theKinChainRightArm = new Rmath::KinChain( theConfigReader );
+    theConfigReader.setKinChain(CONFIG_PATH + HEAD_CFG);
+    theKinChainHead = new Rmath::KinChain( theConfigReader );
 
 #ifdef DEBUG_MODE
-  INFO("Initializing: building up base kinematic chain (left foot to body center)... ");
+    INFO("Initializing: building up kinematic chains... ");
 #endif
 
   /* ---------------------------------------- Proxies and threads initialization -------------------------------------------- */
@@ -143,6 +126,7 @@ void R2Module::init()
       fCamProxy = boost::shared_ptr<ALVideoDeviceProxy>(new ALVideoDeviceProxy(getParentBroker()));
       fMotionProxy = boost::shared_ptr<ALMotionProxy>(new ALMotionProxy(getParentBroker()));
       fPostureProxy = boost::shared_ptr<ALRobotPostureProxy>(new ALRobotPostureProxy(getParentBroker()));
+      fBallTrackerProxy = boost::shared_ptr<AL::ALRedBallTrackerProxy>(new ALRedBallTrackerProxy(getParentBroker()));
   }
   catch (const AL::ALError& e)
   {
@@ -188,37 +172,83 @@ void R2Module::init()
   theConfigReader.extractJointBounds(&jointBounds);
 
   // Convert joint ranges into velocity bound estimates
-  Eigen::MatrixXd velBounds(JOINTS_NUM,2);
+  Eigen::MatrixXd velBounds(JOINTS_NUM, 2);
   posBound2velBound(jointBounds, getConfiguration(), &velBounds);
 
   // Actual task initialization
-  jointLimits = new TaskBase(0, Eigen::MatrixXd::Identity( JOINTS_NUM, JOINTS_NUM ), velBounds);
+  taskManager.setJointLimits(velBounds);
 
 #ifdef DEBUG_MODE
   INFO("Initializing: retrieving joint limits... ");
 #endif
 
-  /* ------------------------------ Other tasks: head (priority = 1), left arm (priority = 2) ------------------------------ */
+  /* ------------------------------------------------- Other tasks -------------------------------------------------------- */
 
-  // Extract joint bounds from the configuration file
-  ConfigReader headConfig( CONFIG_PATH + HEAD_CFG, CONFIG_PATH + JOINT_BOUNDS_CFG );
+
   // Task initialization
-  Task* head = new Task(3, HEAD, 1, headConfig, 0, HEAD);
+  Task* Rsupporting = new Task(RLEG_TASK_DIM, RLEG_CHAIN_SIZE, RLEG_TASK_PRIORITY, *theKinChainRightLeg);
 
-  // Extract joint bounds from the configuration file
-  ConfigReader pointingConfig( CONFIG_PATH + LEFT_ARM_CFG, CONFIG_PATH + JOINT_BOUNDS_CFG );
-  // Task initialization
-  Task* pointing = new Task(3, L_ARM, 2, pointingConfig, HEAD + R_ARM, HEAD + R_ARM + L_ARM);
+  Task* Lsupporting = new Task(LLEG_TASK_DIM, LLEG_CHAIN_SIZE, LLEG_TASK_PRIORITY, *theKinChainLeftLeg);
 
-  // Push every task into the task map
-  taskMap.insert( std::pair<std::string, Task*> ("Head task", head) );
-  taskMap.insert( std::pair<std::string, Task*> ("Left arm task", pointing) );
+  Task* Lpointing = new Task(LARM_TASK_DIM, LARM_CHAIN_SIZE+LLEG_CHAIN_SIZE,
+                             LARM_TASK_PRIORITY, *theKinChain_LLBase + *CoM_LeftArm + *theKinChainLeftArm,
+                             LLEG_CHAIN_SIZE);
+
+  Task* Rpointing = new Task(RARM_TASK_DIM, RARM_CHAIN_SIZE+LLEG_CHAIN_SIZE,
+                             RARM_TASK_PRIORITY, *theKinChain_LLBase + *CoM_RightArm + *theKinChainRightArm,
+                             LLEG_CHAIN_SIZE);
+
+  Task* looking = new Task(HEAD_TASK_DIM, HEAD_CHAIN_SIZE+LLEG_CHAIN_SIZE,
+                             HEAD_TASK_PRIORITY, *theKinChain_LLBase + *CoM_Head + *theKinChainHead,
+                             LLEG_CHAIN_SIZE);
+
+  //  // Push every task into the task map
+  taskManager.createTask(HEAD_TASK, looking);
+  taskManager.createTask(RIGHT_ARM, Rpointing);
+  taskManager.createTask(LEFT_ARM, Lpointing);
+  taskManager.createTask(RIGHT_LEG, Rsupporting);
+  taskManager.createTask(LEFT_LEG, Lsupporting);
+
+//  Task* rleg1 = new Task(RLEG_TASK_DIM, RLEG_CHAIN_SIZE, 1, *theKinChainRightLeg, 0, soth::Bound::BOUND_INF);
+//  Task* lleg1 = new Task(LLEG_TASK_DIM, LLEG_CHAIN_SIZE, 1, *theKinChainLeftLeg, 0, soth::Bound::BOUND_INF);
+//  Task* rleg2 = new Task(RLEG_TASK_DIM, RLEG_CHAIN_SIZE, 1, *theKinChainRightLeg, 0, soth::Bound::BOUND_SUP);
+//  Task* lleg2 = new Task(LLEG_TASK_DIM, LLEG_CHAIN_SIZE, 1, *theKinChainLeftLeg, 0, soth::Bound::BOUND_SUP);
+//  taskManager.createTask("rleg1",rleg1);
+//  taskManager.createTask("lleg1", lleg1);
+//  taskManager.createTask("rleg2",rleg2);
+//  taskManager.createTask("lleg2", lleg2);
+
+    Task* Rbound = new Task(RARM_TASK_DIM, RARM_CHAIN_SIZE+LLEG_CHAIN_SIZE,
+                             2, *theKinChain_LLBase + *CoM_RightArm + *theKinChainRightArm,
+                             LLEG_CHAIN_SIZE, soth::Bound::BOUND_INF);
+    taskManager.createTask("Rbound", Rbound);
+
+//  Task* Rpointing2 = new Task(RARM_TASK_DIM, RARM_CHAIN_SIZE+LLEG_CHAIN_SIZE,
+//                             4, *theKinChain_LLBase + *CoM_RightArm + *theKinChainRightArm,
+//                             LLEG_CHAIN_SIZE);
+//  taskManager.createTask("jesus",Rpointing2);
+
+//  Task* Lpointing1 = new Task(3, LARM_CHAIN_SIZE, 2, *theKinChainLeftArm);
+//  Task* Lpointing2 = new Task(3, LARM_CHAIN_SIZE, 3, *theKinChainLeftArm);
+//  Task* Lpointing3 = new Task(3, LARM_CHAIN_SIZE, 3, *theKinChainLeftArm);
+//  taskManager.createTask("LJesus",Lpointing1);
+//  taskManager.createTask("LMary",Lpointing2);
+//  taskManager.createTask("LHolySpirit",Lpointing3);
+
+//  Task* Rpointing1 = new Task(3, RARM_CHAIN_SIZE, 2, *theKinChainRightArm);
+//  Task* Rpointing2 = new Task(3, RARM_CHAIN_SIZE, 3, *theKinChainRightArm);
+//  Task* Rpointing3 = new Task(3, RARM_CHAIN_SIZE, 3, *theKinChainRightArm);
+//  taskManager.createTask("RJesus",Rpointing1);
+//  taskManager.createTask("RMary",Rpointing2);
+//  taskManager.createTask("RHolySpirit",Rpointing3);
 
 #ifdef DEBUG_MODE
   INFO("Initializing tasks: ");
-  INFO("- Joint limits, with priority " << jointLimits->getPriority());
-  INFO("- Head task, with priority " << head->getPriority());
-  INFO("- Left arm task, with priority " << pointing->getPriority());
+  INFO("- Head task, with priority " << looking->getPriority());
+  INFO("- Right arm task, with priority " << Rpointing->getPriority());
+  INFO("- Left arm task, with priority " << Lpointing->getPriority());
+  INFO("- Right leg task, with priority " << Rsupporting->getPriority());
+  INFO("- Left leg task, with priority " << Lsupporting->getPriority());
 #endif
   }
 
@@ -310,6 +340,7 @@ void R2Module::getCurrentFrame()
  */
 void R2Module::vision()
 {
+//    fBallTrackerProxy->startTracker();
     // Wait a while before starting acquisition
     qi::os::sleep(1.5);
     // Main loop
@@ -317,7 +348,9 @@ void R2Module::vision()
     {
         qi::os::msleep(100);
         /* WORK IN PROGRESS */
+//        INFO("ball position w.r.t. CoM: \n"<<getRedBallPosition()); /*TODEBUG*/
     }
+//    fBallTrackerProxy->stopTracker();
 }
 
 /*
@@ -339,89 +372,226 @@ void R2Module::motion()
 #endif
 
     // Turn tasks to active
-    jointLimits->activate();
-    taskMap["Head task"]->activate();
-    taskMap["Left arm task"]->activate();
+    taskManager.task(HEAD_TASK).activate(HEAD_TRANSITION_STEP);
+    taskManager.task(RIGHT_ARM).activate(RARM_TRANSITION_STEP);
+    taskManager.task(LEFT_ARM).activate(LARM_TRANSITION_STEP);
+    taskManager.task(RIGHT_LEG).activate(RLEG_TRANSITION_STEP);
+    taskManager.task(LEFT_LEG).activate(LLEG_TRANSITION_STEP);
 
+    /****/
+//    taskManager.task("rleg1").activate(1.0);
+//    taskManager.task("lleg1").activate(1.0);
+//    taskManager.task("rleg2").activate(1.0);
+//    taskManager.task("lleg2").activate(1.0);
+
+//    taskManager.task("jesus").stop(1.0);
+
+    taskManager.task("Rbound").stop(1.0);
+
+//    taskManager.task("LJesus").activate();
+//    taskManager.task("LMary").activate();
+//    taskManager.task("LHolySpirit").activate();
+//    taskManager.task("RJesus").activate();
+//    taskManager.task("RMary").activate();
+//    taskManager.task("RHolySpirit").activate();
+
+    /****/
+
+    Eigen::Matrix4d h_CoMRL, h_CoMLL;
+    CoM_RightLeg->forward(&h_CoMRL);
+    CoM_LeftLeg->forward(&h_CoMLL);
+
+    // Set fixed base transform for the tasks
+    taskManager.task(RIGHT_LEG).set_baseTransform(h_CoMRL);
+    taskManager.task(LEFT_LEG).set_baseTransform(h_CoMLL);
+    taskManager.task(HEAD_TASK).set_baseTransform(base_ankle);
+    taskManager.task(LEFT_ARM).set_baseTransform(base_ankle);
+    taskManager.task(RIGHT_ARM).set_baseTransform(base_ankle);
+
+    /****/
+//    taskManager.task("rleg1").set_baseTransform(h_CoMRL);
+//    taskManager.task("lleg1").set_baseTransform(h_CoMLL);
+//    taskManager.task("rleg2").set_baseTransform(h_CoMRL);
+//    taskManager.task("lleg2").set_baseTransform(h_CoMLL);
+
+    taskManager.task("Rbound").set_baseTransform(base_ankle);
+
+//    taskManager.task("jesus").set_baseTransform(base_ankle);
+
+//    taskManager.task("LJesus").set_baseTransform(base_ankle);
+//    taskManager.task("LMary").set_baseTransform(base_ankle);
+//    taskManager.task("LHolySpirit").set_baseTransform(base_ankle);
+//    taskManager.task("RJesus").set_baseTransform(base_ankle);
+//    taskManager.task("RMary").set_baseTransform(base_ankle);
+//    taskManager.task("RHolySpirit").set_baseTransform(base_ankle);
+
+//    taskManager.task("LJesus").setTargetVelocity(Eigen::Vector3d::UnitX()*50);
+//    taskManager.task("LMary").setTargetVelocity(Eigen::Vector3d::UnitZ()*50);
+//    taskManager.task("LHolySpirit").setTargetVelocity(Eigen::Vector3d::UnitY()*-50);
+//    taskManager.task("RJesus").setTargetVelocity(Eigen::Vector3d::UnitX()*50);
+//    taskManager.task("RMary").setTargetVelocity(Eigen::Vector3d::UnitZ()*-50);
+//    taskManager.task("RHolySpirit").setTargetVelocity(Eigen::Vector3d::UnitY()*-50);
+
+    // Tasks rleg1-2, lleg1-2
+//    Eigen::VectorXd desiredRLegPose2 = desiredRLegPose;
+//    desiredRLegPose2(2) += 100.0;
+//    Eigen::VectorXd desiredLLegPose2 = desiredLLegPose;
+//    desiredLLegPose2(2) += 100.0;
+//    taskManager.task("rleg1").setDesiredPose(desiredRLegPose, 1);
+//    taskManager.task("lleg1").setDesiredPose(desiredLLegPose, 1);
+//    taskManager.task("rleg2").setDesiredPose(desiredRLegPose2, 1);
+//    taskManager.task("lleg2").setDesiredPose(desiredLLegPose2, 1);
+
+    // Task jesus
+//    Eigen::VectorXd desiredRA2pose(3);
+//    desiredRA2pose << 0.0, desiredRHandPose(1), 618.0;
+//    taskManager.task("jesus").setDesiredPose(desiredRA2pose, RARM_TASK_NSTEPS);
+
+    // Task Rbound
+    Eigen::VectorXd desiredRHandPose2 = desiredRHandPose;
+    desiredRHandPose2(0) = -Eigen::Infinity;
+    desiredRHandPose2(1) = RARM_DESIRED_Y;
+    desiredRHandPose2(2) = -Eigen::Infinity;
+    taskManager.task("Rbound").setDesiredPose(desiredRHandPose2);
+
+    /****/
+
+#ifndef UP_DOWN_TASK
+    if(taskManager.task(RIGHT_LEG).taskStatus() != inactive)
+        taskManager.task(RIGHT_LEG).setDesiredPose( desiredRLegPose, RLEG_TASK_NSTEPS );
+
+    if(taskManager.task(LEFT_LEG).taskStatus() != inactive)
+        taskManager.task(LEFT_LEG).setDesiredPose( desiredLLegPose, LLEG_TASK_NSTEPS );
+#else
+    if(taskManager.task(RIGHT_LEG).taskStatus() != inactive)
+        taskManager.task(RIGHT_LEG).setDesiredPose( desiredRLegPose, 5 );
+
+    if(taskManager.task(LEFT_LEG).taskStatus() != inactive)
+        taskManager.task(LEFT_LEG).setDesiredPose( desiredLLegPose, 5 );
+#endif
+
+    if(taskManager.task(HEAD_TASK).taskStatus() != inactive)
+        taskManager.task(HEAD_TASK).setDesiredPose( desiredHeadPose, HEAD_TASK_NSTEPS );
+
+    if(taskManager.task(LEFT_ARM).taskStatus() != inactive)
+#ifndef LARM_CIRCLE_TASK
+        taskManager.task(LEFT_ARM).setDesiredPose( desiredLHandPose, LARM_TASK_NSTEPS );
+#else
+        taskManager.task(LEFT_ARM).circularPathGenerator(desiredLHandPose, CIRCLE_Z_DEPTH,
+                                                        LARM_TASK_NSTEPS, CIRCLE_RADIUS, CIRCLE_LAPS );
+#endif
+
+#ifndef RARM_LARM_JOINT_TASK
+    if(taskManager.task(RIGHT_ARM).taskStatus() != inactive)
+#ifndef RARM_CIRCLE_TASK
+        taskManager.task(RIGHT_ARM).setDesiredPose(desiredRHandPose, RARM_TASK_NSTEPS );
+#else
+        taskManager.task(RIGHT_ARM).circularPathGenerator(desiredRHandPose, CIRCLE_Z_DEPTH,
+                                                         RARM_TASK_NSTEPS, CIRCLE_RADIUS, CIRCLE_LAPS );
+#endif
+#endif
+
+
+#ifdef DEBUG_MODE
+    INFO("Desired head position in space: [\n" << desiredHeadPose << "]");
+    INFO("Desired left hand position in space: [\n" << desiredLHandPose << "]");
+#ifndef RARM_LARM_JOINT_TASK
+    INFO("Desired right hand position in space: [\n" << desiredRHandPose << "]");
+#endif
+    INFO("Desired right foot position in space: [\n" << desiredRLegPose << "]");
+    INFO("Desired Hip position in space: [\n" << desiredLLegPose << "]");
+
+#endif
+#ifdef UP_DOWN_TASK
+    int updown_counter = 0;
+    int mary_holyspirit_flag = 1;
+#endif
+
+    int counter = 0;
     // Main loop
     while(true)
     {
-        // Retrieve current robot configuration
-        Eigen::VectorXd q(jointID.size());
-        q = getConfiguration();
+#ifdef LOG
+        ++counter;
+        INFO("----------------------- iteration: "<<counter<<" ----------------------------");
+#endif
+        if(counter == 35)
+            taskManager.task("Rbound").activate(0.1);
+
+//            taskManager.changePriority("Rbound", 2);
 
 #ifdef DEBUG_MODE
-        INFO("Current joint configuration:");
-        for(unsigned int i=0; i<q.size(); ++i)
-            INFO(jointID.at(i) << "\t" << q(i));
-#endif
-
-        // Update all tasks
-        updateConstraints(q);
-
-        // Push active tasks into the ordered set
-        taskSet.clear();
-        std::map<std::string, Task*>::const_iterator adder;
-        for ( adder = taskMap.begin(); adder != taskMap.end(); ++adder )
-            if( (adder->second)->isActive())
-                taskSet.insert(adder->second);
-
-        // Initialize the HQP solver
-        soth::HCOD hsolver( q.size(), taskSet.size()+1 );
-        Eigen::VectorXd qdot(q.size());
-
-#ifdef DEBUG_MODE
-        INFO("Initializing HQP solver...");
-        INFO( "Active tasks: " << (taskSet.size()+1) << " out of " << (taskMap.size()+1) );
-        INFO("Generating stack...");
-#endif
-        // Set up the hierarchy
-        std::vector<Eigen::MatrixXd> A;
-        std::vector<soth::VectorBound> b;
-        // Joint limits first (top priority task)
-        A.push_back(jointLimits->constraintMatrix());
-        b.push_back(jointLimits->vectorBounds());
-        // All the remaining tasks (in descending order of priority)
-        std::set<TaskBase*>::iterator updater = taskSet.begin();
-        while( updater != taskSet.end() )
+        if (1/*counter == 40*/)
         {
-            A.push_back((*updater)->constraintMatrix());
-            b.push_back((*updater)->vectorBounds());
-            ++updater;
+//            Eigen::VectorXd desiredRLegPose = taskManager.task(RIGHT_LEG).getTargetPose();
+//            Eigen::VectorXd desiredLLegPose = taskManager.task(LEFT_LEG).getTargetPose();
+//            desiredRLegPose(2) += 100.0;
+//            desiredLLegPose(2) += 100.0;
+
+//            taskManager.task(LEFT_LEG).setDesiredPose(desiredLLegPose, LLEG_TASK_NSTEPS);
+//            taskManager.task(RIGHT_LEG).setDesiredPose(desiredRLegPose, RLEG_TASK_NSTEPS);
+//            taskManager.changePriority("Rbound", 2);
+//            INFO("Changing Rbound task!");
         }
-        hsolver.pushBackStages(A, b);
-
-        // Configure the solver
-        hsolver.setDamping(0.0);
-        hsolver.setInitialActiveSet();
-
-#ifdef DEBUG_MODE
-        INFO("Configuring HQP solver...");
-        INFO("Start active search... ");
 #endif
-//        // Run the solver
-//        hsolver.activeSearch(qdot);
-//        // Trim ssolution
-//        Rmath::trim(&qdot);
 
-//#ifdef DEBUG_MODE
-//        INFO("Done.");
-//        INFO("Active set: ");
-//        hsolver.showActiveSet(std::cerr);
-//        INFO("Solution: [\n" << qdot << "]");
-//#endif
+#ifdef UP_DOWN_TASK
+        if ( (taskManager.task(RIGHT_LEG).done()) && (taskManager.task(LEFT_LEG).done()) )
+        {
+            if (updown_counter == 1)
+            {
+                UP_DOWN *= -1;
 
-#ifdef TEST_KINCHAIN
-        qdot = Eigen::VectorXd::Zero(q.size());
-        Eigen::MatrixXd J_TMP_pinv;
-        Rmath::pseudoInverse(J_TMP, &J_TMP_pinv);
-        qdot.segment<L_ARM>(HEAD + R_ARM) = J_TMP_pinv * r;
-        INFO("Solution: [\n" << qdot << "]");
+                Eigen::VectorXd desiredRLegPose = taskManager.task(RIGHT_LEG).getTargetPose();
+                Eigen::VectorXd desiredLLegPose = taskManager.task(LEFT_LEG).getTargetPose();
+                desiredRLegPose(2) += UP_DOWN;
+                desiredLLegPose(2) += UP_DOWN;
+
+                taskManager.task(RIGHT_LEG).setDesiredPose(desiredRLegPose, RLEG_TASK_NSTEPS);
+                taskManager.task(LEFT_LEG).setDesiredPose(desiredLLegPose, LLEG_TASK_NSTEPS);
+
+                if (mary_holyspirit_flag == 1)
+                {
+                    taskManager.changePriority("LJesus",3);
+                    taskManager.changePriority("LHolySpirit",2);
+                    taskManager.changePriority("RJesus",3);
+                    taskManager.changePriority("RHolySpirit",2);
+//                    taskManager.task("LMary").stop(1.0);
+                    mary_holyspirit_flag = 2;
+                }
+                else if (mary_holyspirit_flag == 2)
+                {
+                    taskManager.changePriority("LJesus",2);
+                    taskManager.changePriority("LHolySpirit",3);
+                    taskManager.changePriority("RJesus",2);
+                    taskManager.changePriority("RHolySpirit",3);
+//                    taskManager.task("LMary").stop(1.0);
+                    mary_holyspirit_flag = 1;
+                }
+
+                updown_counter = 0;
+            }
+            else
+                ++updown_counter;
+        }
 #endif
+        // Retrieve current robot configuration
+        Eigen::VectorXd q(JOINTS_NUM);
+        q = getConfiguration();
+        INFO("current configuration: \n" << q);
+
+    #ifdef DEBUG_MODE
+        INFO("\nCurrent joint configuration:");
+        for(unsigned int i = 0; i < q.size(); ++i)
+            INFO(jointID.at(i) << "\t" << q(i));
+    #endif
+
+        // Solve the HQP problem with the current task set
+        Eigen::VectorXd qdot(JOINTS_NUM);
+        taskManager.exec(q, &qdot);
 
         // Update the robot configuration with the obtained solution
         updateConfiguration(q + qdot*TIME_STEP);
-
     }
 }
 
@@ -433,92 +603,18 @@ Eigen::VectorXd R2Module::getConfiguration()
     // Store the resulting values in a Eigen::VectorXd
     Eigen::VectorXd currentConfiguration(jointID.size());
 
+    AL::ALValue jointId, angles;
+
     // Use Naoqi ID for each joint to request the joint current measured value
     for(int i=0; i <jointID.size(); ++i)
-        currentConfiguration(i) = ( fMotionProxy->getAngles(jointID.at(i), true) ).at(0);
+        jointId.arrayPush( jointID.at(i) );
+
+    angles = fMotionProxy->getAngles( jointId, true );
+
+    for(int i=0; i <jointID.size(); ++i)
+        currentConfiguration(i) = angles[i];
 
     return currentConfiguration;
-}
-
-/*
- * Update every active task with the current joint configuration.
- */
-void R2Module::updateConstraints(const Eigen::VectorXd& q)
-{
-    // Updating the base kinematic chain (left foot to body center)
-    Eigen::Matrix4d H_base;
-    Eigen::MatrixXd J_base(6, L_LEG);
-    // Left leg joints are those on the bottom part of the IDs vector
-    theKinChainLeftLeg->update(q.tail(L_LEG));
-    // Compute kinematics
-    theKinChainLeftLeg->forward(&H_base);
-    theKinChainLeftLeg->differential(&J_base);
-
-    /* ------------------------- Joint bounds update -------------------------*/
-
-    Eigen::MatrixXd velBounds(q.size(), 2);
-    posBound2velBound(jointBounds, q, &velBounds);
-    jointLimits->setVectorBounds(velBounds);
-
-#ifdef DEBUG_MODE
-    INFO("Updating joint bounds: ");
-    INFO(std::endl << *jointLimits);
-#endif
-
-#ifdef TEST_KINCHAIN
-    INFO("Updating test kinematic chain (body to left hand): ");
-    q_TMP << q.segment<L_ARM>(HEAD + R_ARM);
-    INFO("Joint configuration:");
-    for(unsigned int i=0; i<q_TMP.size(); ++i)
-        INFO(jointID.at(HEAD + R_ARM + i) << "\t" << q_TMP(i));
-    theKinChain_TMP->update(q_TMP);
-    theKinChain_TMP->forward(&H_TMP);
-    theKinChain_TMP->differential(&J_TMP, 3);
-    INFO("Direct kinematics transform: ");
-    INFO(std::endl << H_TMP);
-    INFO("Jacobian (linear velocities only): ");
-    INFO(std::endl << J_TMP);
-#endif
-
-    /* -------------------- Head and left arm task update --------------------*/
-
-    // Defining the desired pose vectors in the task space
-    Eigen::VectorXd desiredHeadPose(3), desiredLHandPose(3);
-
-    //desiredHeadPose << 53.9, 0.0, 194.4; // zero-position HEAD
-    desiredHeadPose << -20.0, 0.0, 194.4;
-
-    //desiredLHandPose << 218.7, 133, 112.31; // zero-position L ARM
-//    desiredLHandPose << 0.0, 329.01, 112.31; // point-left L ARM
-    desiredLHandPose << 15.1, 112.31, 316.0; // point-up L ARM
-
-    //desiredRHandPose << 218.7, -133, 112.31, 0.0, 0.0, 0.0; //zero-position R ARM
-    //desiredRHandPose <<-15, -329.01, 112.31, 0.0, 0.0, 0.0; //point-right R ARM
-
-    // Head task update
-    ( taskMap["Head task"] )->update( q.head(HEAD), K_HEAD, desiredHeadPose, Eigen::VectorXd::Zero(3) );
-
-#ifdef DEBUG_MODE
-    INFO("Desired head position in space: [\n" << desiredHeadPose << "]");
-    INFO("Head task constraint equation: ");
-    INFO(std::endl << *( taskMap["Head task"] ) );
-#endif
-
-    // Left arm task update
-    ( taskMap["Left arm task"] )->update( q.segment<L_ARM>(HEAD+R_ARM), K_HEAD, desiredLHandPose, Eigen::VectorXd::Zero(3) );
-
-#ifdef DEBUG_MODE
-    INFO("Desired left hand position in space: [\n" << desiredLHandPose << "]");
-    INFO("Left arm task constraint equation: ");
-    INFO(std::endl << *( taskMap["Left arm task"] ) );
-#endif
-
-#ifdef TEST_KINCHAIN
-    INFO("Desired left hand position in space: [\n" << desiredLHandPose << "]");
-    r = K_HEAD * ( desiredLHandPose - H_TMP.topRightCorner(3,1) );
-    INFO("New target velocity:\n[" << r << "]");
-#endif
-
 }
 
 /*
@@ -526,37 +622,11 @@ void R2Module::updateConstraints(const Eigen::VectorXd& q)
  */
 bool R2Module::updateConfiguration(const Eigen::VectorXd& delta_q)
 {
-#ifdef TEST_KINCHAIN
-    Eigen::VectorXd delta_q_ = delta_q;
-#endif
-
     // Initialize variables
     AL::ALValue jointId, angles, setStiff, zeroArray;
     // Push into the vector all joint value increments to be requested
     for(int i=0; i< delta_q.size(); ++i)
     {
-
-#ifdef TEST_KINCHAIN
-        if (delta_q_(i) > 0)
-        {
-            if ( delta_q_(i) > jointBounds(i,1) )
-                delta_q_(i) = jointBounds(i,1);
-        }
-        else
-        {
-            if ( delta_q_(i) < jointBounds(i,0) )
-                delta_q_(i) = jointBounds(i,0);
-        }
-
-        if(delta_q_(i) != 0)
-        {
-            jointId.arrayPush( jointID.at(i) );
-            angles.arrayPush( delta_q_(i) );
-            setStiff.arrayPush( 1.0 );
-            zeroArray.arrayPush( 0.0 );
-        }
-        continue;
-#endif
         if(delta_q(i) != 0)
         {
             jointId.arrayPush( jointID.at(i) );
@@ -587,5 +657,54 @@ void R2Module::posBound2velBound( const Eigen::MatrixXd& posBound, const Eigen::
     *velBound = (posBound - currConf)/TIME_STEP;
 }
 
+void R2Module::closeHand(const std::string& handID)
+{
+    if(handID == "both")
+    {
+        fMotionProxy->setStiffnesses("LHand", 1.0);
+        fMotionProxy->setStiffnesses("RHand", 1.0);
+        fMotionProxy->closeHand("LHand");
+        fMotionProxy->closeHand("RHand");
+        fMotionProxy->setStiffnesses("LHand", 0.0);
+        fMotionProxy->setStiffnesses("RHand", 0.0);
+    }
+    else
+    {
+        fMotionProxy->setStiffnesses(handID, 1.0);
+        fMotionProxy->closeHand(handID);
+        fMotionProxy->setStiffnesses(handID, 0.0);
+    }
+
+}
+
+void R2Module::openHand(const std::string& handID)
+{
+    if(handID == "both")
+    {
+        fMotionProxy->setStiffnesses("LHand", 1.0);
+        fMotionProxy->setStiffnesses("RHand", 1.0);
+        fMotionProxy->openHand("LHand");
+        fMotionProxy->openHand("RHand");
+        fMotionProxy->setStiffnesses("LHand", 0.0);
+        fMotionProxy->setStiffnesses("RHand", 0.0);
+    }
+    else
+    {
+        fMotionProxy->setStiffnesses(handID, 1.0);
+        fMotionProxy->openHand(handID);
+        fMotionProxy->setStiffnesses(handID, 0.0);
+    }
+
+}
+
+Eigen::Vector3d R2Module::getRedBallPosition()
+{
+    Eigen::Vector3d ballPosition;
+    ballPosition << fBallTrackerProxy->getPosition().at(0),
+                    fBallTrackerProxy->getPosition().at(1),
+                    fBallTrackerProxy->getPosition().at(2);
+
+    return ballPosition;
+}
 
 } // namespace AL

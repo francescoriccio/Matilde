@@ -4,6 +4,14 @@
 // Uncomment if you want to have debug information
 #define GOALIE_DEBUG_MODE
 
+#define DIVE_TYPE(x) \
+    if(x == 1) std::cerr << "\033[22;34;1m"<<"\t[Goalie] diveType: none"<<"\033[0m" << std::endl; \
+    else if(x == 2) std::cerr << "\033[22;34;1m"<<"\t[Goalie] diveType: long dive left"<<"\033[0m" << std::endl; \
+    else if(x == 3) std::cerr << "\033[22;34;1m"<<"\t[Goalie] diveType: long dive right"<<"\033[0m" << std::endl; \
+    else if(x == 4) std::cerr << "\033[22;34;1m"<<"\t[Goalie] diveType: close dive left"<<"\033[0m" << std::endl; \
+    else if(x == 5) std::cerr << "\033[22;34;1m"<<"\t[Goalie] diveType: close dive right"<<"\033[0m" << std::endl; \
+    else if(x == 6) std::cerr << "\033[22;34;1m"<<"\t[Goalie] diveType: stop ball"<<"\033[0m" << std::endl; \
+
 option GoalieLearner
 {
 private:
@@ -152,7 +160,7 @@ public:
                             if ((Timestamp() - lastTimeRoleSent).getMs() > 1000.0)
                             {
                                 cerr << "\033[22;34;1m\t[Goalie] DiveHandle::ballProjectionEstimate: " << theDiveHandle.ballProjectionEstimate << " \033[0m" << endl;
-                                cerr << "\033[22;34;1m\t[Goalie] DiveHandle::diveType: " << theDiveHandle.diveType << " \033[0m" << endl;
+                                DIVE_TYPE( (int)theDiveHandle.diveType );
                                 cerr << "\033[0;32;1m\t[Goalie] DiveHandle::diveTimer: " << theDiveHandle.diveTime << " \033[0m" << endl;
                             }
 #endif

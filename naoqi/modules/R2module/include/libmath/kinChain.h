@@ -14,6 +14,7 @@
 #include <vector>
 #include <map>
 #include <Eigen/Core>
+#include <Eigen/LU>
 #include <soth/HCOD.hpp>
 
 #include "configReader.h"
@@ -38,23 +39,26 @@ protected:
     class Joint
     {
     public:
+        // Identifiers
+        std::string id;
+        int col;
 
         double value;
         double max;
         double min;
 
-        Joint(double _value = 0.0, double _max = Eigen::Infinity, double _min = -Eigen::Infinity):
-            value(_value), max(_max), min(_min) {}
+        Joint(std::string _id, int _col, double _value = 0.0, double _max = Eigen::Infinity, double _min = -Eigen::Infinity):
+            id(_id), col(_col), value(_value), max(_max), min(_min){}
     };
     // Indices of the robot joints within the chain
     std::map<int, Joint> joints;
 
-
 public:
 
     // Constructors
-    KinChain(ConfigReader& theConfigReader, int _i, int _j);
-    KinChain(std::vector<Rmath::Transform*> _transf);
+    KinChain(ConfigReader& theConfigReader);
+//    KinChain(ConfigReader& theConfigReader, int _i, int _j);
+    KinChain(std::vector<Rmath::Transform*> _transf, std::map<int, Rmath::KinChain::Joint> _joints);
     // Copy constructors
     KinChain(const Rmath::KinChain& kc);
     // Destructors
@@ -65,6 +69,8 @@ public:
     Eigen::VectorXd jointConfiguration();
     // Getter for the joint limits
     const soth::VectorBound jointLimits();
+    // Getter for joints names and indices
+    void getJointsIDs(std::map<std::string, int>* jointsIDs) const;
 
     // Joint configuration update
     void update(int first, int last, Eigen::VectorXd &q);

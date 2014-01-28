@@ -10,51 +10,48 @@
 
 #include "configReader.h"
 
-
-ConfigReader::ConfigReader(std::string dh_file_path, std::string params_file_path)
+ConfigReader::ConfigReader(std::string params_file_path)
 {
-    dhReader(dh_file_path);
-    if(params_file_path != ""){
-        paramsReader(params_file_path);
-    }
+    paramsReader(params_file_path);
 }
 
-void ConfigReader::extractJointParams(std::vector<double>* _min, std::vector<double>* _max, std::vector<double>* _zero_pose, int _i, int _j)
-{
-    _min->clear();
-    _max->clear();
-    _zero_pose->clear();
+ void ConfigReader::setKinChain(std::string dh_file_path)
+ {
+     transformations.clear();
+     kinChainJointIDs.clear();
+     dhReader(dh_file_path);
+ }
 
-    for(int i=_i; i<_j; ++i)
-    {
-        _min->push_back( minBounds.at(i) );
-        _max->push_back( maxBounds.at(i) );
-        _zero_pose->push_back( zero_pose.at(i) );
-    }
+std::vector<double> ConfigReader::getJointParams(std::string _id)
+{
+    assert( jointParams.find(_id) != jointParams.end() );
+    return jointParams[_id];
 }
 
 soth::VectorBound ConfigReader::extractJointBounds()
 {
-    soth::VectorBound bounds(5);//minBounds.size());
-//    for(int i=0; i<minBounds.size(); ++i)
-    for(int i=7; i<=12; ++i)
-    {
-        bounds[i] = soth::Bound(minBounds.at(i), maxBounds.at(i));
-    }
+    soth::VectorBound bounds(jointParams.size());
+    for(int index=0; index<jointID.size();++index)
+        bounds[index] = soth::Bound( jointParams[jointID.at(index)].at(2),
+                                     jointParams[jointID.at(index)].at(1) );
     return bounds;
 }
 
 void ConfigReader::extractJointBounds(Eigen::MatrixXd* bounds)
 {
-    for(int i=0; i<minBounds.size(); ++i)
-    {
-        bounds->row(i) << minBounds.at(i), maxBounds.at(i);
-    }
+    for(int index=0; index<jointID.size();++index)
+        bounds->row(index) << jointParams[jointID.at(index)].at(2),
+                jointParams[jointID.at(index)].at(1);
 }
 
 void ConfigReader::storeJointsID(std::vector<std::string>* _jointID)
 {
     *_jointID = jointID;
+}
+
+void ConfigReader::kinChainJointsID(std::vector<std::string>* _kcJointID)
+{
+    *_kcJointID = kinChainJointIDs;
 }
 
 void ConfigReader::dhReader(std::string dh_file_path)
@@ -67,6 +64,8 @@ void ConfigReader::dhReader(std::string dh_file_path)
         return;
     }
 
+    kinChainJointIDs.clear();
+
     std::string line;
     while(cfg_dh.good())
     {
@@ -78,6 +77,7 @@ void ConfigReader::dhReader(std::string dh_file_path)
                   std::back_inserter<std::vector<std::string> >(tokens));
 
         if(tokens.empty()) continue;
+        if(tokens.at(0) == "#") continue;
 
         // Canonical DH transform case
         if (tokens.at(0) == "H")
@@ -86,13 +86,14 @@ void ConfigReader::dhReader(std::string dh_file_path)
                                                                      valueReader(tokens.at(2)),
                                                                      to_double(tokens.at(3)),
                                                                      0.0 );
+            kinChainJointIDs.push_back(tokens.at(6));
             transformations.push_back(dh_transform);
         }
         // Fixed translation case
         else if (tokens.at(0) == "T")
         {
             Rmath::Transform* transl = new Rmath::Translation( to_double(tokens.at(1)),
-                                                               to_double(tokens.at(2)) ,
+                                                               to_double(tokens.at(2)),
                                                                to_double(tokens.at(3)) );
             transformations.push_back(transl);
         }
@@ -100,19 +101,20 @@ void ConfigReader::dhReader(std::string dh_file_path)
         else if (tokens.at(0) == "R")
         {
             Rmath::Transform* rot = new Rmath::Rotation( to_double(tokens.at(1)),
-                                                         to_double(tokens.at(2)) ,
+                                                         to_double(tokens.at(2)),
                                                          to_double(tokens.at(3)),
                                                          valueReader(tokens.at(4)) );
             transformations.push_back(rot);
         }
+
+        if (tokens.at(0) == "}") break;
     }
+
     cfg_dh.close();
 }
 
-
 void ConfigReader::paramsReader(std::string params_file_path)
 {
-
     std::fstream cfg_params;
     cfg_params.open(params_file_path.c_str(), std::fstream::in);
     if(cfg_params == NULL)
@@ -133,12 +135,19 @@ void ConfigReader::paramsReader(std::string params_file_path)
 
         if(tokens.empty()) continue;
         if( tokens.at(0) == "[" ) continue;
-        if( tokens.at(0) == "{" || tokens.at(0) == "}" ) continue;
+        if( tokens.at(0) == "#" ) continue;
+        if( tokens.at(0) == "{" ) continue;
 
-        zero_pose.push_back( valueReader(tokens.at(0)) );
-        minBounds.push_back( to_double(tokens.at(1)) );
-        maxBounds.push_back( to_double(tokens.at(2)) );
-        jointID.push_back( tokens.at(3) );
+        if( tokens.at(0) == "}" ) break;
+
+        std::vector<double> params;
+        params.push_back(valueReader(tokens.at(0)));
+        params.push_back(to_double(tokens.at(2)));
+        params.push_back(to_double(tokens.at(1)));
+
+        jointParams.insert(std::pair<std::string,std::vector<double> >(tokens.at(3), params) );
+
+        jointID.push_back(tokens.at(3));
     }
     cfg_params.close();
 }

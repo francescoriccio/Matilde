@@ -21,6 +21,7 @@
 #include "libmath/transform.h"
 
 #define INFO(x) std::cout << "[Rmath] " << x << std::endl;
+//#define JACOBIAN_DEBUG std::cout << "[Rmath::Jacobian] " << x << std::endl;
 
 /** -------- Core tools -------- */
 
@@ -386,6 +387,23 @@ Eigen::Matrix4d Rmath::homZ(double a, const Eigen::Vector3d& shift)
     return hz;
 }
 
+Eigen::Matrix4d Rmath::hTranslation(const Eigen::Vector3d& shift)
+{
+    Eigen::Matrix4d hz;
+    // Using Eigen comma initializer
+    hz  <<   1,       0,       0,  shift(0),
+             0,       1,       0,  shift(1),
+             0,       0,       1,  shift(2),
+             0,       0,       0,         1;
+
+#ifdef CROP_TO_TOLERANCE
+    // Trim according to default numerical tolerance
+    trim(&hz);
+#endif
+
+    return hz;
+}
+
 /*
  * Compute the Moore-Penrose pseudo-inversion of matrix 'm' using SVD decomposition.
  * Optional value is the default tolerance for the singular values of 'm'.
@@ -506,7 +524,8 @@ void Rmath::DirectKin(const std::vector<Rmath::Transform*>& chain, Eigen::Matrix
     (*H) = Eigen::Matrix4d::Identity();
 
     // Go through the chain, compute i-to-i+1 transformation and post-multiply
-    for (unsigned int i=0; i < chain.size(); ++i) (*H) *= chain.at(i)->transform();
+    for (unsigned int i=0; i < chain.size(); ++i)
+        (*H) *= chain.at(i)->transform();
 
 #ifdef CROP_TO_TOLERANCE
     // Trim according to default numerical tolerance
@@ -582,6 +601,13 @@ void Rmath::geomJacobian(const std::vector<Rmath::Transform*>& chain, const std:
     // Initialization of J as a zero-matrix
     (*J) = Eigen::MatrixXd::Zero(taskSpaceDim, i_joints.size());
 
+//#ifdef JACOBIAN_DEBUG
+//    INFO( "\ttask dimension"<< taskSpaceDim );
+//    for(int i=0; i< chain.size(); ++i) chain.at(i)->print(std::cout) ;
+//    INFO( "\tnumber of joints: "<< i_joints.size() );
+//    for(int i=0; i< i_joints.size(); ++i) INFO( "\ti_joints: "<< i_joints.at(i) );
+//#endif
+
     // Default Z-axis in the base frame [ 0 , 0 , 1 ]'
     Eigen::Vector3d z = Eigen::Vector3d::UnitZ();
 
@@ -591,10 +617,15 @@ void Rmath::geomJacobian(const std::vector<Rmath::Transform*>& chain, const std:
     // Base-EE translation vector
     Eigen::Vector3d d_0e = H_ee.topRightCorner(3, 1);
 
+
     // Jacobian leftmost column
     Eigen::VectorXd J0(6,1); J0 << z.cross(d_0e), z;
     // Crop to required task space dimension
     J->col(0) = J0.head(taskSpaceDim);
+
+//#ifdef JACOBIAN_DEBUG
+//    INFO( "\tendeffector translation d0e: \n"<< H_ee.topRightCorner(3, 1) );
+//#endif
 
     // Go through the chain of transforms and build up J column-wise
     for (int i=1; i < i_joints.size(); ++i)
@@ -602,11 +633,15 @@ void Rmath::geomJacobian(const std::vector<Rmath::Transform*>& chain, const std:
         // Consider the subchain of transformation leading to joint i-1
         Eigen::Matrix4d currentH;
         std::vector<Rmath::Transform*> currentSubchain; //(chain.begin(), chain.begin()+i_joints.at(i-1));
-        for (int j=0; j <= i_joints.at(i)-1; ++j)
+        for (int j=0; j < i_joints.at(i); ++j)
             currentSubchain.push_back( chain.at(j) );
+
         // Compute forward kinematics up to joint i-1
         DirectKin(currentSubchain, &currentH);
 
+//#ifdef JACOBIAN_DEBUG
+//    INFO( "\tKinChain joint: "<<i<< std::endl << currentH.topRightCorner(3, 1) );
+//#endif
         // Extract current Z-axis in the reference frame of joint i-1
         Eigen::Vector3d currentZ = currentH.topLeftCorner(3,3) * z;
         // Extract base-to-joint-i translation vector

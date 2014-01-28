@@ -100,7 +100,7 @@ void Rmath::Translation::parameters(std::map<char, double>* params)
  */
 Eigen::Matrix4d Rmath::Translation::transform() const
 {
-    return Rmath::homZ(0.0, values);
+    return Rmath::hTranslation(values);
 }
 
 /*

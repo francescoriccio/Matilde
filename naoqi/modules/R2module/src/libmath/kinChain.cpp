@@ -13,79 +13,46 @@
 
 #define INFO(x) std::cout << "[R2 module::KinChain] " << x << std::endl;
 
-
-/*
- * Class constructor using a ConfigReader class object.
- * The chain of transformation is extracted from the .cfg file using indinces _i, _j and then
- * the private containers are initialized.
- */
-Rmath::KinChain::KinChain(ConfigReader& theConfigReader, int _i, int _j)
+Rmath::KinChain::KinChain( ConfigReader& theConfigReader )
 {
     // Extract the chain of transformations
     transformations = theConfigReader.Transformations();
 
     // Extract from the general .cfg file all the information about joints
-    std::vector<double> jointBounds_max, jointBounds_min, jointZeroPose;
-    theConfigReader.extractJointParams(&jointBounds_min, &jointBounds_max, &jointZeroPose, _i, _j);
-    // Check for dimensions consistency
-    assert(jointBounds_max.size() == jointBounds_min.size());
-    assert(jointBounds_max.size() <= transformations.size());
-    assert(jointZeroPose.size() >= 0);
+    std::vector<std::string> kcJointIds;
+    theConfigReader.kinChainJointsID(&kcJointIds);
 
-    // Detect the actual joints across the kinematic chain and fill the joints container
     int joint_count = 0;
     for(unsigned int i = 0; i < transformations.size(); ++i)
     {
-        // A joints is identified by a DH-transform
-        if ( transformations.at(i)->getType() == Rmath::dh_transform )
+        if( transformations.at(i)->getType() == Rmath::dh_transform )
         {
-            // Look for data about the current joint
-            if(jointBounds_min.size() != 0 && jointBounds_max.size() != 0 && jointZeroPose.size() != 0)
-            {
-                // Set the zero-value of the joint (if present)
-                if(jointZeroPose.at(joint_count) != 0.0)
-                    transformations.at(i)->update(jointZeroPose.at(joint_count));
-                // Generate a Joint class object and push it in the container
-                Rmath::KinChain::Joint current_q(jointZeroPose.at(joint_count),
-                                                 jointBounds_max.at(joint_count),
-                                                 jointBounds_min.at(joint_count));
-                joints[i] = current_q;
-            }
-            // Create a joint with no mechanical bounds and initial value = 0.0 otherwise
-            else
-            {
-                Rmath::KinChain::Joint current_q (0.0);
-                joints[i] = current_q;
-            }
+            std::vector<double> jointParams;
+            jointParams = theConfigReader.getJointParams( kcJointIds.at(joint_count) );
+
+            Rmath::KinChain::Joint current_q( kcJointIds.at(joint_count),
+                                              joint_count,
+                                              jointParams.at(0),
+                                              jointParams.at(1),
+                                              jointParams.at(2) );
+
+            joints.insert( std::pair<int, Rmath::KinChain::Joint> (i, current_q) );
+
             ++joint_count;
         }
     }
+
 }
 
 /*
  * Class constructor overload using a vector of Rmath::Transform.
  */
-Rmath::KinChain::KinChain(std::vector<Rmath::Transform*> _transf): transformations(_transf)
-{
-    // Detect the actual joints across the kinematic chain and fill the joints container
-    int joint_count = 0;
-    for(unsigned int i = 0; i < transformations.size(); ++i)
-    {
-        // A joints is identified by a DH-transform
-        if ( transformations.at(i)->getType() == Rmath::dh_transform )
-        {
-            // Create a joint with no mechanical bounds and initial value = 0.0
-            Rmath::KinChain::Joint current_q;
-            joints[i] = current_q;
-
-            ++joint_count;
-        }
-    }
-
-}
+Rmath::KinChain::KinChain(std::vector<Rmath::Transform*> _transf, std::map<int, Rmath::KinChain::Joint> _joints):
+    transformations(_transf), joints(_joints)
+{}
 
 /*
- * Class copy constructor (NOTE: shallow copy!).
+ * Class copy constructor (NOTE: deep copy!).
  */
 Rmath::KinChain::KinChain(const Rmath::KinChain& kc)
 {
@@ -119,6 +86,18 @@ const soth::VectorBound Rmath::KinChain::jointLimits()
     }
 
     return bounds;
+}
+
+/* TOCOMMENT */
+void Rmath::KinChain::getJointsIDs(std::map<std::string, int>* jointsIDs) const
+{
+    assert(jointsIDs != NULL);
+    std::map<int,Joint>::const_iterator i = joints.begin();
+    while(i !=joints.end())
+    {
+        jointsIDs->insert( std::pair<std::string,int>( (i->second).id, (i->second).col ) );
+        ++i;
+    }
 }
 
 /*
@@ -182,7 +161,7 @@ void Rmath::KinChain::update(int first, int last, Eigen::VectorXd& q)
         if ((j >= first) && (j <= last) )
         {
             // Update using the Transform base class method
-            joint_updater->second = q(i);
+            (joint_updater->second).value = q(i);
             transformations.at(joint_updater->first)->update(q(i));
             ++i;
         }
@@ -201,13 +180,12 @@ void Rmath::KinChain::update(const Eigen::VectorXd &q)
     while (joint_updater != joints.end())
     {
         // Update using the Transform base class method
-        joint_updater->second = q(i);
+        (joint_updater->second).value = q(i);
         transformations.at(joint_updater->first)->update(q(i));
 
         ++joint_updater; ++i;
     }
 }
-
 
 /*
  * Compute the forward kinematics of the chain (or any subchain of it) as a homogeneous transformation matrix.
@@ -240,15 +218,16 @@ void Rmath::KinChain::differential(int base, int ee, Eigen::MatrixXd* J, int tas
 
      // Collect all joint positions within the chain
      std::vector<int> q_indices;
-     int i = 0;
      std::map<int, Rmath::KinChain::Joint>::iterator selector = joints.begin();
+
      // Iterate over the joint container
      while(selector != joints.end())
      {
          // Skip joints out of the desired range
-         if ( (i >= base) && (i <= ee) )
-             q_indices.push_back(selector->first);
-         ++selector; ++i;
+         if ( selector->first >= base && selector->first <= ee )
+             q_indices.push_back(selector->first -base);
+
+         ++selector;
      }
 
      // Compute the Jacobian matrix
@@ -285,17 +264,19 @@ Rmath::KinChain& Rmath::KinChain::operator=(const Rmath::KinChain& kc)
     std::map<int, Rmath::KinChain::Joint>::const_iterator joint_iter = kc.joints.begin();
     while (joint_iter != kc.joints.end())
     {
-        Rmath::KinChain::Joint current_q((joint_iter->second).value,
-                                         (joint_iter->second).max,
-                                         (joint_iter->second).min);
+        Rmath::KinChain::Joint current_q( (joint_iter->second).id,
+                                          (joint_iter->second).col,
+                                          (joint_iter->second).value,
+                                          (joint_iter->second).max,
+                                          (joint_iter->second).min );
 
-        joints[joint_iter->first] = current_q;
+        joints.insert( std::pair<int, Rmath::KinChain::Joint> (joint_iter->first, current_q) );
         ++joint_iter;
     }
 
-    // Re-fill the vector of Transform* using the input KinChain object (NOTE: shallow copy!)
+    // Re-fill the vector of Transform* using the input KinChain object (NOTE: deep copy!)
     for(int i=0; i<kc.transformations.size(); ++i)
-        transformations.push_back( kc.transformations.at(i) );
+        transformations.push_back( kc.transformations.at(i)->clone() );
 }
 
 /*
@@ -307,11 +288,13 @@ Rmath::KinChain& Rmath::KinChain::operator+=(const Rmath::KinChain& kc)
     std::map<int, Rmath::KinChain::Joint>::const_iterator joint_iter = kc.joints.begin();
     while (joint_iter != kc.joints.end())
     {
-        Rmath::KinChain::Joint current_q((joint_iter->second).value,
-                                         (joint_iter->second).max,
-                                         (joint_iter->second).min);
+        Rmath::KinChain::Joint current_q( (joint_iter->second).id,
+                                          (joint_iter->second).col,
+                                          (joint_iter->second).value,
+                                          (joint_iter->second).max,
+                                          (joint_iter->second).min);
         // Indices are shifted by the size of the precedent chain
-        joints[ transformations.size() + joint_iter->first] = current_q;
+        joints.insert( std::pair<int, Rmath::KinChain::Joint> (transformations.size() + joint_iter->first, current_q) );
         ++joint_iter;
     }
 
@@ -327,6 +310,35 @@ Rmath::KinChain& Rmath::KinChain::operator+=(const Rmath::KinChain& kc)
  */
 Rmath::KinChain Rmath::KinChain::operator+(const Rmath::KinChain& kc)
 {
+    // Add the new set of joints to the container
+    std::map<int, Rmath::KinChain::Joint> _joints;
+    std::map<int, Rmath::KinChain::Joint>::const_iterator joint_iter = joints.begin();
+    while (joint_iter != joints.end())
+    {
+        Rmath::KinChain::Joint current_q( (joint_iter->second).id,
+                                          (joint_iter->second).col,
+                                          (joint_iter->second).value,
+                                          (joint_iter->second).max,
+                                          (joint_iter->second).min);
+
+        // Indices are shifted by the size of the precedent chain
+        _joints.insert( std::pair<int, Rmath::KinChain::Joint> (joint_iter->first, current_q) );
+        ++joint_iter;
+    }
+    std::map<int, Rmath::KinChain::Joint>::const_iterator kcJoint_iter = kc.joints.begin();
+    while (kcJoint_iter != kc.joints.end())
+    {
+        Rmath::KinChain::Joint current_q( (kcJoint_iter->second).id,
+                                          joints.size() + (kcJoint_iter->second).col,
+                                          (kcJoint_iter->second).value,
+                                          (kcJoint_iter->second).max,
+                                          (kcJoint_iter->second).min);
+
+        // Indices are shifted by the size of the precedent chain
+        _joints.insert( std::pair<int, Rmath::KinChain::Joint> (transformations.size() + kcJoint_iter->first, current_q) );
+        ++kcJoint_iter;
+    }
+
     // First insert copies of the Transform objects of *this
     std::vector<Rmath::Transform*> transf;
     for(int i=0; i< transformations.size(); ++i)
@@ -335,8 +347,9 @@ Rmath::KinChain Rmath::KinChain::operator+(const Rmath::KinChain& kc)
     for(int i=0; i <kc.transformations.size(); ++i)
         transf.push_back( kc.transformations.at(i)->clone() );
 
+
     // NOTE: any information on the joint bounds is lost (TO FIX.
-    return KinChain(transf);
+    return KinChain(transf, _joints);
 }
 
 /*
@@ -348,4 +361,4 @@ std::ostream& Rmath::operator<<(std::ostream& out, const Rmath::KinChain& kc)
         kc.transformations.at(i)->print(out);
     return out;
 }
-
+// NOTE: any information on the joint bounds is lost (TO FIX.
