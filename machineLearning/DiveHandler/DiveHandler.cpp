@@ -1,7 +1,7 @@
 /**
 * @file DiveHandler.cpp
 *
-*	This header file contains the implementation of a module working as a dive handler for the goalie.
+*	This source file contains the implementation of a module working as a dive handler for the goalie.
 *   Such handler is activated when the ball gets in the own field side, and it computes an estimate of its projection toward the goal
 *   with respect to the goalie reference frame. It also provides estimates for the amount of time needed to dive, save the ball and
 *   then get back to the goalie position. This measure is compared against the estimated time the ball needs to reach the goal.
@@ -230,7 +230,6 @@ void DiveHandler::PGLearner::generatePerturbations(std::vector<float>* partial_p
     }
 }
 
-
 /* TOCOMMENT */
 float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
 {
@@ -356,10 +355,14 @@ bool DiveHandler::PGLearner::updateCoeffs()
                     coeffs_avgGradient.at(coeffs.size() - (n +1)) = avg_plus - avg_minus;
             }
 #endif
+            // Avoid 'nan' when the gradient is zeroed
+            float normalization = 1.0;
+            if (magnitude(coeffs_avgGradient) != 0)
+                normalization = magnitude(coeffs_avgGradient);
 
 #ifdef DIVEHANDLER_TRAINING
-            SPQR_INFO("Computed policy gradient: [ " << coeffs_avgGradient.at(0)/magnitude(coeffs_avgGradient)
-                      << ", " << coeffs_avgGradient.at(1)/magnitude(coeffs_avgGradient) << " ]");
+            SPQR_INFO("Computed policy gradient: [ " << coeffs_avgGradient.at(0)/normalization
+                      << ", " << coeffs_avgGradient.at(1)/normalization << " ]");
 #endif
 
             // Update coefficients history
@@ -370,7 +373,7 @@ bool DiveHandler::PGLearner::updateCoeffs()
 
             // Update the coefficients following the gradient direction
             for( unsigned int i=0; i<coeffs_avgGradient.size(); ++i )
-                coeffs.at(i) += - (coeffs_avgGradient.at(i)/magnitude(coeffs_avgGradient)) * ETA;
+                coeffs.at(i) += - (coeffs_avgGradient.at(i)/normalization) * ETA;
 
 #ifdef DIVEHANDLER_TRAINING
             SPQR_INFO("New coefficients: [ " << coeffs.at(0) << ", " << coeffs.at(1) << " ]");
@@ -518,7 +521,7 @@ void DiveHandler::estimateDiveTimes()
 /* TOCOMMENT */
 inline float DiveHandler::computeDiveAndRecoverTime(float alpha1, float alpha2)
 {
-    return alpha2*( alpha1*tBall2Goal - tDive ) + tBackInPose;
+    return fabs(alpha2*( alpha1*tBall2Goal - tDive ) + tBackInPose);
 }
 
 /* TOTEST&COMMENT */
@@ -578,7 +581,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
             // The module is in the learning state, waiting for the next reward
             else if( state == waitReward )
             {
-                // First case: game controller active and the opponent team scores
+                // The opponent team scores: the goalie failed and gets a negative reward
                 if(opponentScore != (int)theOpponentTeamInfo.score)
                 {
                     // The learner obtains a negative reward
@@ -599,7 +602,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
                     if(!diveHandle.rewardAck)
                         diveHandle.rewardAck = true;
                 }
-                // The goalie has performed a dive and yet the outcome is unknown
+                // The own team scores: user-guided move to provide the goalie a positive reward
                 else if(ownScore != (int)theOwnTeamInfo.score)
                 {
                     // The learner obtains a positive reward
@@ -608,6 +611,9 @@ void DiveHandler::update(DiveHandle& diveHandle)
                     // Crop the buffer
                     if (rewardHistory.size() > REWARDS_HISTORY_SIZE)
                         rewardHistory.resize(REWARDS_HISTORY_SIZE);
+                    // Update own score
+                    ownScore = (int)theOwnTeamInfo.score;
+
 #ifdef DIVEHANDLER_TRAINING
                     SPQR_SUCCESS("The goalie has succeeded! Positive reward for the learner.  ");
 #endif
@@ -616,7 +622,6 @@ void DiveHandler::update(DiveHandle& diveHandle)
                     // Clear the pending reward
                     if(!diveHandle.rewardAck)
                         diveHandle.rewardAck = true;
-
                 }
             }
 

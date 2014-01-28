@@ -185,7 +185,7 @@ private:
     // Obtained rewards
     std::list<float> rewardHistory;
 
-    // Opponent team current score
+    // Current scores
     int opponentScore;
     int ownScore;
 
