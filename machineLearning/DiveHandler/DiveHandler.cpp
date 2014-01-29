@@ -26,8 +26,8 @@
 #define DIVEHANDLER_TRAINING
 //#define RAND_PERMUTATIONS
 
-#define NEGATIVE_REWARD -1.0
-#define POSITIVE_REWARD 1.0
+#define NEGATIVE_REWARD -0.5
+#define POSITIVE_REWARD 1.5
 
 // Debug messages template
 #define SPQR_ERR(x) std::cerr << "\033[22;31;1m" <<"[DiveHandler] " << x << "\033[0m"<< std::endl;
@@ -68,9 +68,6 @@ void DiveHandler::CoeffsLearner::setCoeffs(const std::vector<float>& _coeffs)
 void DiveHandler::CoeffsLearner::setParam(const std::string& _key, float _value)
 {
     params[_key] = _value;
-//    // "Smart" insertion procedure using iterators (C++ 11)
-//    std::map<std::string, float>::iterator iter = params.begin();
-//    params.insert( std::pair< std::string, float >(_key, _value) );
 }
 
 
@@ -88,7 +85,9 @@ void DiveHandler::CoeffsLearner::setParam(const std::string& _key, float _value)
  */
 DiveHandler::PGLearner::PGLearner( DiveHandler* _dhPtr, int _nCoeffs, float _epsilon, int _T, float _initValue, bool randomize ):
     // Initialize the base class
-    CoeffsLearner(_nCoeffs, _initValue, _dhPtr)
+    CoeffsLearner(_nCoeffs, _initValue, _dhPtr),
+    // Initialize the gradient estimate
+    coeffsGradient(_nCoeffs, 0.0), positivesWeight(0.0)
 {
     // Initializing coefficients
     if(randomize)
@@ -238,7 +237,8 @@ float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
     // Dimensions check
     assert(R.size() == coeffs.size());
     // Generate perturbated policy and call the DiveHandler object for evaluation
-    return diveHandler_ptr->computeDiveAndRecoverTime(coeffs.at(0) + R.at(0), coeffs.at(1) + R.at(1));
+    float tDiveAndRecover = diveHandler_ptr->computeDiveAndRecoverTime(coeffs.at(0) + R.at(0), coeffs.at(1) + R.at(1));
+    return LAMBDA*fabs(tDiveAndRecover) + (1-LAMBDA)*fabs(diveHandler_ptr->tBall2Goal - tDiveAndRecover);
 }
 
 
@@ -247,24 +247,24 @@ void DiveHandler::PGLearner::updateParams(const std::list<float>& rewards)
 {
     float reward_score = 0.0;
     int discount_exp = 0;
-#ifdef DIVEHANDLER_TRAINING_DEBUG
-    int positives = 0, negatives = 0;
-#endif
+    int positives = 0;
 
     std::list<float>::const_iterator i = rewards.begin();
     while (i != rewards.end())
     {
-#ifdef DIVEHANDLER_TRAINING_DEBUG
-        if (*i == POSITIVE_REWARD) ++positives;
-        else ++ negatives;
-#endif
+        // Counting positives
+        if (*i == POSITIVE_REWARD)
+            ++positives;
+
         // Computing discounted rewards
         reward_score += (*i) * pow(GAMMA, discount_exp);
         ++i; ++discount_exp;        
     }
+    positivesWeight = static_cast<float>(positives)/rewards.size();
+
 #ifdef DIVEHANDLER_TRAINING_DEBUG
     SPQR_INFO("Positive rewards: " << positives << " out of " << rewards.size());
-    SPQR_INFO("Negative rewards: " << negatives << " out of " << rewards.size());
+    SPQR_INFO("Negative rewards: " << (rewards.size() - positives) << " out of " << rewards.size());
     SPQR_INFO("Reward total score: " << reward_score);
 #endif
 
@@ -375,9 +375,21 @@ bool DiveHandler::PGLearner::updateCoeffs()
             if (magnitude(coeffs_avgGradient) != 0)
                 normalization = magnitude(coeffs_avgGradient);
 
+
 #ifdef DIVEHANDLER_TRAINING
             SPQR_INFO("Computed policy gradient: [ " << coeffs_avgGradient.at(0)/normalization
                       << ", " << coeffs_avgGradient.at(1)/normalization << " ]");
+#endif
+            // Weight new gradient estimate and previous one according to the reward score
+            std::vector<float> newGradient (coeffsGradient.size());
+            for( unsigned int j=0; j<newGradient.size(); ++j )
+                newGradient.at(j) = (positivesWeight)*coeffsGradient.at(j) +
+                                    (1.0 - positivesWeight)*(coeffs_avgGradient.at(j)/normalization);
+
+#ifdef DIVEHANDLER_TRAINING
+            SPQR_INFO("Weight of the current estimate: " << positivesWeight);
+            SPQR_INFO("New policy gradient: [ " << newGradient.at(0)
+                      << ", " << newGradient.at(1) << " ]");
 #endif
 
             // Update coefficients history
@@ -389,7 +401,10 @@ bool DiveHandler::PGLearner::updateCoeffs()
             // Update the coefficients following the gradient direction
             for( unsigned int i=0; i<coeffs_avgGradient.size(); ++i )
             {
-                coeffs.at(i) += - (coeffs_avgGradient.at(i)/normalization) * ETA;
+                // Coefficients
+                coeffs.at(i) += - newGradient.at(i) * getParam("epsilon");
+                // Gradient estimate
+                coeffsGradient.at(i) = newGradient.at(i);
 
                 // Crop negative coefficients
                 if (coeffs.at(i) < 0) coeffs.at(i) = 0.0;
@@ -541,7 +556,7 @@ void DiveHandler::estimateDiveTimes()
 /* TOCOMMENT */
 inline float DiveHandler::computeDiveAndRecoverTime(float alpha1, float alpha2)
 {
-    return fabs(alpha2*( alpha1*tBall2Goal - tDive ) + tBackInPose);
+    return alpha2*( alpha1*tBall2Goal - tDive ) + tBackInPose;
 }
 
 /* TOTEST&COMMENT */

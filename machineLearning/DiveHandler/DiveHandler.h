@@ -53,14 +53,14 @@ END_MODULE
 // Termination conditions
 #define MAX_ITER 300
 #define CONVERGENCE_THRESHOLD 0.05
-
 // PG parameters
 #define GAMMA 0.5
 #define BUFFER_DIM 10
 #define REWARDS_HISTORY_SIZE 15
-#define ETA 0.4
 #define EPSILON 0.15
 #define T 15
+// Evaluation weight
+#define LAMBDA 0.15
 
 
 // Module class declaration
@@ -138,6 +138,11 @@ class DiveHandler : public DiveHandlerBase
         typedef std::list< std::vector<float> > PGbuffer;
 
         private:
+
+        // Current estimate for the coefficients gradient
+        std::vector<float> coeffsGradient;
+        // Weight of the current gradient estimate
+        float positivesWeight;
 
         // Memory buffer for the PG algorithm
         PGbuffer coeffsBuffer;
