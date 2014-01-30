@@ -238,7 +238,10 @@ float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
     assert(R.size() == coeffs.size());
     // Generate perturbated policy and call the DiveHandler object for evaluation
     float tDiveAndRecover = diveHandler_ptr->computeDiveAndRecoverTime(coeffs.at(0) + R.at(0), coeffs.at(1) + R.at(1));
-    return LAMBDA*fabs(tDiveAndRecover) + (1-LAMBDA)*fabs(diveHandler_ptr->tBall2Goal - tDiveAndRecover);
+
+    return (1.0-LAMBDA1-LAMBDA2)*fabs(tDiveAndRecover) +
+           LAMBDA1*fabs(diveHandler_ptr->tBall2Goal - tDiveAndRecover) +
+           LAMBDA2*fabs(1.0 - ((coeffs.at(0) + R.at(0))+(coeffs.at(1) + R.at(1))));
 }
 
 
@@ -260,7 +263,7 @@ void DiveHandler::PGLearner::updateParams(const std::list<float>& rewards)
         reward_score += (*i) * pow(GAMMA, discount_exp);
         ++i; ++discount_exp;        
     }
-    positivesWeight = static_cast<float>(positives)/rewards.size();
+    positivesWeight = (POSITIVE_REWARD*static_cast<float>(positives))/(positives*POSITIVE_REWARD + (rewards.size()-positives)*fabs(NEGATIVE_REWARD));
 
 #ifdef DIVEHANDLER_TRAINING_DEBUG
     SPQR_INFO("Positive rewards: " << positives << " out of " << rewards.size());

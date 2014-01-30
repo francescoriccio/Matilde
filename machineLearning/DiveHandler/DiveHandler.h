@@ -60,7 +60,8 @@ END_MODULE
 #define EPSILON 0.15
 #define T 15
 // Evaluation weight
-#define LAMBDA 0.15
+#define LAMBDA1 0.6
+#define LAMBDA2 0.3
 
 
 // Module class declaration
