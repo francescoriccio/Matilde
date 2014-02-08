@@ -52,15 +52,15 @@ END_MODULE
 
 // Termination conditions
 #define MAX_ITER 300
-#define CONVERGENCE_THRESHOLD 0.05
+#define CONVERGENCE_THRESHOLD 0.01
 // PG parameters
 #define GAMMA 0.5
 #define BUFFER_DIM 10
 #define REWARDS_HISTORY_SIZE 15
-#define EPSILON 0.15
+#define EPSILON 0.10
 #define T 15
 // Evaluation weight
-#define LAMBDA1 0.6
+#define LAMBDA1 0.7
 #define LAMBDA2 0.3
 
 
@@ -142,8 +142,11 @@ class DiveHandler : public DiveHandlerBase
 
         // Current estimate for the coefficients gradient
         std::vector<float> coeffsGradient;
-        // Weight of the current gradient estimate
-        float positivesWeight;
+
+        // Current reward score
+        float reward_score;
+        // Current reward normalization factor
+        float reward_norm;
 
         // Memory buffer for the PG algorithm
         PGbuffer coeffsBuffer;
@@ -160,7 +163,7 @@ class DiveHandler : public DiveHandlerBase
 
         // Default constructor
         PGLearner(DiveHandler* _dhPtr, int _nCoeffs, float _epsilon = EPSILON,
-                  int _T = T, float _initValue = 0.0, bool randomize = false);
+                  int _T = T, float _initValue = 1.0, bool randomize = false);
 
         // Generate a set of perturbations for the current policy
         void generatePerturbations();
@@ -221,6 +224,12 @@ public:
     DiveHandler();
     // Destructor
     ~DiveHandler();
+
+    // Setter for the reward list
+    inline const std::list<float>& getRewardList() const
+    {
+        return rewardHistory;
+    }
 
     // Update the DiveHandle for the goalie behavior
     void update(DiveHandle& diveHandle);

@@ -26,7 +26,7 @@
 #define DIVEHANDLER_TRAINING
 //#define RAND_PERMUTATIONS
 
-#define NEGATIVE_REWARD -0.5
+#define NEGATIVE_REWARD -1.0
 #define POSITIVE_REWARD 1.5
 
 // Debug messages template
@@ -87,8 +87,11 @@ DiveHandler::PGLearner::PGLearner( DiveHandler* _dhPtr, int _nCoeffs, float _eps
     // Initialize the base class
     CoeffsLearner(_nCoeffs, _initValue, _dhPtr),
     // Initialize the gradient estimate
-    coeffsGradient(_nCoeffs, 0.0), positivesWeight(0.0)
+    coeffsGradient(_nCoeffs, 0.0)
 {
+    reward_score = 0.0;
+    reward_norm = 1.0;
+
     // Initializing coefficients
     if(randomize)
     {
@@ -238,17 +241,26 @@ float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
     assert(R.size() == coeffs.size());
     // Generate perturbated policy and call the DiveHandler object for evaluation
     float tDiveAndRecover = diveHandler_ptr->computeDiveAndRecoverTime(coeffs.at(0) + R.at(0), coeffs.at(1) + R.at(1));
+    // Perturbated coefficients
+    std::vector<float> new_coeffs(2);
+    new_coeffs.at(0) = coeffs.at(0) + R.at(0);
+    new_coeffs.at(1) = coeffs.at(1) + R.at(1);
 
-    return (1.0-LAMBDA1-LAMBDA2)*fabs(tDiveAndRecover) +
-           LAMBDA1*fabs(diveHandler_ptr->tBall2Goal - tDiveAndRecover) +
-           LAMBDA2*fabs(1.0 - ((coeffs.at(0) + R.at(0))+(coeffs.at(1) + R.at(1))));
+//    return (1.0-LAMBDA1-LAMBDA2)*fabs(tDiveAndRecover) +
+//           LAMBDA1*fabs(diveHandler_ptr->tBall2Goal - tDiveAndRecover) +
+//           LAMBDA2*fabs(1.0 - ((coeffs.at(0) + R.at(0))+(coeffs.at(1) + R.at(1))));
+
+    return (1.0 - fabs(reward_score/reward_norm))*fabs(diveHandler_ptr->tBall2Goal - tDiveAndRecover) +
+           fabs(reward_score/reward_norm)*fabs(magnitude(coeffs) - magnitude(new_coeffs));
 }
 
 
 /* TOTEST&COMMENT */
 void DiveHandler::PGLearner::updateParams(const std::list<float>& rewards)
 {
-    float reward_score = 0.0;
+    reward_score = 0.0;
+    if (!rewards.empty()) reward_norm = 0.0;
+
     int discount_exp = 0;
     int positives = 0;
 
@@ -261,9 +273,9 @@ void DiveHandler::PGLearner::updateParams(const std::list<float>& rewards)
 
         // Computing discounted rewards
         reward_score += (*i) * pow(GAMMA, discount_exp);
+        reward_norm += fabs((*i) * pow(GAMMA, discount_exp));
         ++i; ++discount_exp;        
     }
-    positivesWeight = (POSITIVE_REWARD*static_cast<float>(positives))/(positives*POSITIVE_REWARD + (rewards.size()-positives)*fabs(NEGATIVE_REWARD));
 
 #ifdef DIVEHANDLER_TRAINING_DEBUG
     SPQR_INFO("Positive rewards: " << positives << " out of " << rewards.size());
@@ -386,11 +398,9 @@ bool DiveHandler::PGLearner::updateCoeffs()
             // Weight new gradient estimate and previous one according to the reward score
             std::vector<float> newGradient (coeffsGradient.size());
             for( unsigned int j=0; j<newGradient.size(); ++j )
-                newGradient.at(j) = (positivesWeight)*coeffsGradient.at(j) +
-                                    (1.0 - positivesWeight)*(coeffs_avgGradient.at(j)/normalization);
+                newGradient.at(j) = coeffs_avgGradient.at(j)/normalization;
 
 #ifdef DIVEHANDLER_TRAINING
-            SPQR_INFO("Weight of the current estimate: " << positivesWeight);
             SPQR_INFO("New policy gradient: [ " << newGradient.at(0)
                       << ", " << newGradient.at(1) << " ]");
 #endif
@@ -431,7 +441,7 @@ bool DiveHandler::PGLearner::updateCoeffs()
  */
 DiveHandler::DiveHandler():
     diveType(none), state(static_cast<DiveHandler::LearningState>(SPQR::GOALIE_LEARNING_STATE)),
-    learner(new PGLearner(this, 2, EPSILON, T, 1.0, true)), opponentScore(0), tBall2Goal(SPQR::FIELD_DIMENSION_Y),
+    learner(new PGLearner(this, 2, EPSILON, T, 1.0, false)), opponentScore(0), tBall2Goal(SPQR::FIELD_DIMENSION_Y),
     tDive(0.0), tBackInPose(0.0), ballProjectionIntercept(SPQR::FIELD_DIMENSION_Y), distanceBall2Goal(SPQR::FIELD_DIMENSION_X)
 {
 #ifdef DIVEHANDLER_TRAINING
