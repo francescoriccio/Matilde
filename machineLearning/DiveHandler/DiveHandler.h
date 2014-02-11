@@ -60,8 +60,8 @@ END_MODULE
 #define EPSILON 0.10
 #define T 15
 // Evaluation weight
-#define LAMBDA1 0.7
-#define LAMBDA2 0.3
+#define LAMBDA1 0.9
+//#define LAMBDA2 0.3
 
 
 // Module class declaration
@@ -142,6 +142,8 @@ class DiveHandler : public DiveHandlerBase
 
         // Current estimate for the coefficients gradient
         std::vector<float> coeffsGradient;
+        // Best individual performance achieved so far
+        std::vector<float> coeffsBest;
 
         // Current reward score
         float reward_score;
@@ -176,6 +178,12 @@ class DiveHandler : public DiveHandlerBase
 
         // Update coefficients performing a step of the learning algorithm
         virtual bool updateCoeffs();
+
+        // Update the best coefficient setting so far
+        inline void updateCoeffsBest()
+        {
+            coeffsBest = coeffs;
+        }
 
     };
 	

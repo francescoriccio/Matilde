@@ -89,8 +89,10 @@ DiveHandler::PGLearner::PGLearner( DiveHandler* _dhPtr, int _nCoeffs, float _eps
     // Initialize the gradient estimate
     coeffsGradient(_nCoeffs, 0.0)
 {
+    // Initializing reward scores
     reward_score = 0.0;
     reward_norm = 1.0;
+    coeffsBest = coeffs;
 
     // Initializing coefficients
     if(randomize)
@@ -241,26 +243,28 @@ float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
     assert(R.size() == coeffs.size());
     // Generate perturbated policy and call the DiveHandler object for evaluation
     float tDiveAndRecover = diveHandler_ptr->computeDiveAndRecoverTime(coeffs.at(0) + R.at(0), coeffs.at(1) + R.at(1));
+
     // Perturbated coefficients
     std::vector<float> new_coeffs(2);
     new_coeffs.at(0) = coeffs.at(0) + R.at(0);
     new_coeffs.at(1) = coeffs.at(1) + R.at(1);
 
+    return (1.0-LAMBDA1)*fabs(diveHandler_ptr->tBall2Goal - tDiveAndRecover) +
+            LAMBDA1*fabs(magnitude(coeffs) - magnitude(coeffsBest));
+
 //    return (1.0-LAMBDA1-LAMBDA2)*fabs(tDiveAndRecover) +
 //           LAMBDA1*fabs(diveHandler_ptr->tBall2Goal - tDiveAndRecover) +
 //           LAMBDA2*fabs(1.0 - ((coeffs.at(0) + R.at(0))+(coeffs.at(1) + R.at(1))));
 
-    return (1.0 - fabs(reward_score/reward_norm))*fabs(diveHandler_ptr->tBall2Goal - tDiveAndRecover) +
-           fabs(reward_score/reward_norm)*fabs(magnitude(coeffs) - magnitude(new_coeffs));
 }
 
 
 /* TOTEST&COMMENT */
 void DiveHandler::PGLearner::updateParams(const std::list<float>& rewards)
 {
+    // Re-initialize reward scores
     reward_score = 0.0;
     if (!rewards.empty()) reward_norm = 0.0;
-
     int discount_exp = 0;
     int positives = 0;
 
@@ -285,6 +289,10 @@ void DiveHandler::PGLearner::updateParams(const std::list<float>& rewards)
 
     //Adjusting PG parameters according to the obtained score
     setParam("epsilon", exp( -reward_score / REWARDS_HISTORY_SIZE ) * getParam("epsilon"));
+
+    // Update best performance
+    if (rewards.front() == POSITIVE_REWARD)
+        coeffsBest = coeffs;
 
 #ifdef DIVEHANDLER_TRAINING
     SPQR_INFO( "Epsilon value changed to: " << getParam("epsilon") << " according to the obtained rewards. ");
@@ -569,7 +577,7 @@ void DiveHandler::estimateDiveTimes()
 /* TOCOMMENT */
 inline float DiveHandler::computeDiveAndRecoverTime(float alpha1, float alpha2)
 {
-    return alpha2*( alpha1*tBall2Goal - tDive ) + tBackInPose;
+    return alpha2*( alpha1*tBall2Goal - tDive );
 }
 
 /* TOTEST&COMMENT */
