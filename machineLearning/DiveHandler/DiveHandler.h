@@ -60,7 +60,7 @@ END_MODULE
 #define EPSILON 0.10
 #define T 15
 // Evaluation weight
-#define LAMBDA1 0.9
+#define LAMBDA1 0.7
 //#define LAMBDA2 0.3
 
 
@@ -102,9 +102,9 @@ class DiveHandler : public DiveHandlerBase
     {
         protected:
         // Set of coefficients representing the learning objective
-        std::vector<float> coeffs;
+        std::vector<double> coeffs;
         // Set of fixed parameters defining the cost funcion
-        std::map<std::string, float> params;
+        std::map<std::string, double> params;
 
         // Iteration counter
         int iter_count;
@@ -114,41 +114,45 @@ class DiveHandler : public DiveHandlerBase
 		
         public:
         // Default constructor
-        CoeffsLearner(int _nCoeffs, float _initValue, DiveHandler* _dhPtr):
+        CoeffsLearner(int _nCoeffs, double _initValue, DiveHandler* _dhPtr):
             coeffs(_nCoeffs, _initValue), iter_count(0), diveHandler_ptr(_dhPtr) { }
 
         // Setter/getter for the coefficients
-        void setCoeffs(const std::vector<float>& _coeffs);
-        inline std::vector<float> getCoeffs(){ return coeffs; }
+        void setCoeffs(const std::vector<double>& _coeffs);
+        inline std::vector<double> getCoeffs(){ return coeffs; }
 
         // Setter/getter for the parameters
-        void setParam(const std::string& _key, float _value);
-        inline float getParam(std::string _key){ return params[_key]; }
+        void setParam(const std::string& _key, double _value);
+        inline double getParam(std::string _key){ return params[_key]; }
 
         // Update coefficients performing a step of the learning algorithm
         virtual bool updateCoeffs() = 0;
 
         // Use the obtained rewards to adjust the algorithm parameters
-        virtual void updateParams(const std::list<float>& rewards) = 0;
+        virtual void updateParams(const std::list<double>& rewards) = 0;
 
     };
 
     // Inner class modeling a PolicyGradient-based learning agent
     class PGLearner : public CoeffsLearner
     {
-        typedef std::list< std::vector<float> > PGbuffer;
+        typedef std::list< std::vector<double> > PGbuffer;
 
         private:
 
         // Current estimate for the coefficients gradient
-        std::vector<float> coeffsGradient;
+        std::vector<double> coeffsGradient;
         // Best individual performance achieved so far
-        std::vector<float> coeffsBest;
+        std::vector<double> coeffsBest;
 
         // Current reward score
-        float reward_score;
+        double reward_score;
         // Current reward normalization factor
-        float reward_norm;
+        double reward_norm;
+        // Score of the current gradient estimate
+        double rewardGradient;
+        // Best gradient score so far
+        double rewardBest;
 
         // Memory buffer for the PG algorithm
         PGbuffer coeffsBuffer;
@@ -159,22 +163,22 @@ class DiveHandler : public DiveHandlerBase
         bool converged();
 
         // Recursive perturbation generator
-        void generatePerturbations(std::vector<float>* partial_perturbation, unsigned int index);
+        void generatePerturbations(std::vector<double>* partial_perturbation, unsigned int index);
 
         public:
 
         // Default constructor
-        PGLearner(DiveHandler* _dhPtr, int _nCoeffs, float _epsilon = EPSILON,
-                  int _T = T, float _initValue = 1.0, bool randomize = false);
+        PGLearner(DiveHandler* _dhPtr, int _nCoeffs, double _epsilon = EPSILON,
+                  int _T = T, double _initValue = 1.0, bool randomize = false);
 
         // Generate a set of perturbations for the current policy
         void generatePerturbations();
 
         // Evaluate a single policy perturbation with the cost function
-        float evaluatePerturbation( std::vector<float> R );
+        double evaluatePerturbation( std::vector<double> R );
 
         // Update the PG parameters according to the obtained rewards
-        void updateParams(const std::list<float>& rewards);
+        void updateParams(const std::list<double>& rewards);
 
         // Update coefficients performing a step of the learning algorithm
         virtual bool updateCoeffs();
@@ -200,7 +204,7 @@ private:
     // Learning agent
     CoeffsLearner* learner;
     // Obtained rewards
-    std::list<float> rewardHistory;
+    std::list<double> rewardHistory;
 
     // Current scores
     int opponentScore;
@@ -208,23 +212,23 @@ private:
 
     // Estimated time the ball needs to reach the goal
     // a.k.a. Tpapo (historical reasons)
-    float tBall2Goal;
+    double tBall2Goal;
     // Estimated time needed for the current dive action to be performed
-    float tDive;
+    double tDive;
     // Estimated time the goalie needs to back up to its original position
-    float tBackInPose;
+    double tBackInPose;
 
     // Estimated intersection between the ball projection and the goal line
-    float ballProjectionIntercept;
+    double ballProjectionIntercept;
     // Estimated distance of the ball from the own goal
-    float distanceBall2Goal;
+    double distanceBall2Goal;
 
     // Computes parameters using the ball estimated position and velocity
     void estimateDiveTimes();
     void estimateBallProjection();
 
     // Compute the overall time the goalie needs to dive and then recover its position
-    inline float computeDiveAndRecoverTime(float alpha1, float alpha2);
+    inline double computeDiveAndRecoverTime(double alpha1, double alpha2);
 	
 public:
 
@@ -234,7 +238,7 @@ public:
     ~DiveHandler();
 
     // Setter for the reward list
-    inline const std::list<float>& getRewardList() const
+    inline const std::list<double>& getRewardList() const
     {
         return rewardHistory;
     }
