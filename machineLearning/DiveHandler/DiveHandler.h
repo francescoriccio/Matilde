@@ -22,27 +22,30 @@
 #include <vector>
 #include <list>
 #include <map>
+#include <time.h>
 
 #include "Tools/Module/Module.h"
 #include "Representations/Modeling/BallModel.h"
 #include "Representations/Infrastructure/TeamInfo.h"
 #include "Representations/Infrastructure/FrameInfo.h"
+#include "Representations/Infrastructure/GameInfo.h"
 #include "Representations/Infrastructure/RobotInfo.h"
+#include "Representations/Sensing/FallDownState.h"
 #include "Representations/SPQR-Representations/ConfigurationParameters.h"
 #include "Representations/SPQR-Representations/RobotPoseSpqrFiltered.h"
 #include "Representations/SPQR-Representations/GlobalBallEstimation.h"
 #include "Representations/SPQR-Representations/DiveHandle.h"
-#include "SPQR-Libraries/PTracking/src/Utils/AgentPacket.h"
+#include "Utils/AgentPacket.h"
 
 
 // Module definition
-
-
 MODULE(DiveHandler)
     REQUIRES(OpponentTeamInfo)
     REQUIRES(OwnTeamInfo)
     REQUIRES(FrameInfo)
-    REQUIRES(RobotInfo)
+	REQUIRES(GameInfo)
+	REQUIRES(FallDownState)
+	REQUIRES(RobotInfo)
     REQUIRES(RobotPoseSpqrFiltered)
     REQUIRES(BallModel)
     REQUIRES(GlobalBallEstimation)
@@ -51,60 +54,40 @@ END_MODULE
 
 
 // Termination conditions
-#define MAX_ITER 300
+#define MAX_ITER 15
 #define CONVERGENCE_THRESHOLD 0.01
 // PG parameters
 #define GAMMA 0.5
 #define BUFFER_DIM 10
-#define REWARDS_HISTORY_SIZE 15
-#define EPSILON 0.10
+#define REWARDS_HISTORY_SIZE 10
+#define EPSILON 0.05
 #define T 15
 // Evaluation weight
-#define LAMBDA1 0.7
+#define LAMBDA1 0.9
 //#define LAMBDA2 0.3
 
 
 // Module class declaration
-
-
 class DiveHandler : public DiveHandlerBase
 {
     // Learning state
-    enum LearningState
-    {
+    ENUM( LearningState,
         // Learning disabled
         notLearning = 1,
         // Learning paused, expecting reward
         waitReward,
         // Learning active
         learning
-    };
-
-    // Dive type
-    enum Dive
-    {
-        // No dive at all
-        none = 1,
-        // Long dive on the left
-        lDive,
-        // Long dive on the right
-        rDive,
-        // Close dive on the left
-        lcloseDive,
-        // Close dive on the right
-        rcloseDive,
-        // Stop the ball without diving
-        stopBall
-    };
+     );
 
     // Inner base class modeling the learning agent
     class CoeffsLearner
     {
         protected:
         // Set of coefficients representing the learning objective
-        std::vector<double> coeffs;
+        std::vector<float> coeffs;
         // Set of fixed parameters defining the cost funcion
-        std::map<std::string, double> params;
+        std::map<std::string, float> params;
 
         // Iteration counter
         int iter_count;
@@ -114,45 +97,43 @@ class DiveHandler : public DiveHandlerBase
 		
         public:
         // Default constructor
-        CoeffsLearner(int _nCoeffs, double _initValue, DiveHandler* _dhPtr):
+        CoeffsLearner(int _nCoeffs, float _initValue, DiveHandler* _dhPtr):
             coeffs(_nCoeffs, _initValue), iter_count(0), diveHandler_ptr(_dhPtr) { }
 
+        virtual ~CoeffsLearner(){}
+
         // Setter/getter for the coefficients
-        void setCoeffs(const std::vector<double>& _coeffs);
-        inline std::vector<double> getCoeffs(){ return coeffs; }
+        void setCoeffs(const std::vector<float>& _coeffs);
+        inline std::vector<float> getCoeffs(){ return coeffs; }
 
         // Setter/getter for the parameters
-        void setParam(const std::string& _key, double _value);
-        inline double getParam(std::string _key){ return params[_key]; }
+        void setParam(const std::string& _key, float _value);
+        inline float getParam(std::string _key){ return params[_key]; }
 
         // Update coefficients performing a step of the learning algorithm
         virtual bool updateCoeffs() = 0;
 
         // Use the obtained rewards to adjust the algorithm parameters
-        virtual void updateParams(const std::list<double>& rewards) = 0;
+        virtual void updateParams(const std::list<float>& rewards) = 0;
 
     };
 
     // Inner class modeling a PolicyGradient-based learning agent
     class PGLearner : public CoeffsLearner
     {
-        typedef std::list< std::vector<double> > PGbuffer;
+        typedef std::list< std::vector<float> > PGbuffer;
 
         private:
 
         // Current estimate for the coefficients gradient
-        std::vector<double> coeffsGradient;
+        std::vector<float> coeffsGradient;
         // Best individual performance achieved so far
-        std::vector<double> coeffsBest;
+        std::vector<float> coeffsBest;
 
         // Current reward score
-        double reward_score;
+        float reward_score;
         // Current reward normalization factor
-        double reward_norm;
-        // Score of the current gradient estimate
-        double rewardGradient;
-        // Best gradient score so far
-        double rewardBest;
+        float reward_norm;
 
         // Memory buffer for the PG algorithm
         PGbuffer coeffsBuffer;
@@ -163,22 +144,22 @@ class DiveHandler : public DiveHandlerBase
         bool converged();
 
         // Recursive perturbation generator
-        void generatePerturbations(std::vector<double>* partial_perturbation, unsigned int index);
+        void generatePerturbations(std::vector<float>* partial_perturbation, unsigned int index);
 
         public:
 
         // Default constructor
-        PGLearner(DiveHandler* _dhPtr, int _nCoeffs, double _epsilon = EPSILON,
-                  int _T = T, double _initValue = 1.0, bool randomize = false);
+        PGLearner(DiveHandler* _dhPtr, int _nCoeffs, float _epsilon = EPSILON,
+                  int _T = T, float _initValue = 1.0, bool randomize = false);
 
         // Generate a set of perturbations for the current policy
         void generatePerturbations();
 
         // Evaluate a single policy perturbation with the cost function
-        double evaluatePerturbation( std::vector<double> R );
+        float evaluatePerturbation( std::vector<float> R );
 
         // Update the PG parameters according to the obtained rewards
-        void updateParams(const std::list<double>& rewards);
+        void updateParams(const std::list<float>& rewards);
 
         // Update coefficients performing a step of the learning algorithm
         virtual bool updateCoeffs();
@@ -197,14 +178,14 @@ class DiveHandler : public DiveHandlerBase
 private:
 
     // Dive type currently selected
-    Dive diveType;
+    DiveHandle::Dive diveType;
 
     // Current learning state
     LearningState state;  
     // Learning agent
     CoeffsLearner* learner;
     // Obtained rewards
-    std::list<double> rewardHistory;
+    std::list<float> rewardHistory;
 
     // Current scores
     int opponentScore;
@@ -212,23 +193,54 @@ private:
 
     // Estimated time the ball needs to reach the goal
     // a.k.a. Tpapo (historical reasons)
-    double tBall2Goal;
+    float tBall2Goal;
     // Estimated time needed for the current dive action to be performed
-    double tDive;
+    float tDive;
     // Estimated time the goalie needs to back up to its original position
-    double tBackInPose;
+    float tBackInPose;
+
+	// Timer
+	class Timer
+	{
+	public:
+		clock_t start;
+		clock_t fallen;
+		bool setTimer;
+
+		Timer():start(0), fallen(0), setTimer(false){}
+		inline void set(clock_t startTime)
+		{
+			if(!setTimer)
+			{
+				start = startTime;
+				setTimer = true;
+//				std::cerr << "\033[33;1m" <<"[DiveHandler] " << "set Timer!" << "\033[0m" << std::endl;
+			}
+		}
+		inline void reset()
+		{
+			if(setTimer)
+			{
+				setTimer = false;
+//				std::cerr << "\033[33;1m" <<"[DiveHandler] " << "reset Timer!" << "\033[0m" << std::endl;
+			}
+		}
+	};
+
+	Timer timer;
+	unsigned int estimatedInterval;
 
     // Estimated intersection between the ball projection and the goal line
-    double ballProjectionIntercept;
+    float ballProjectionIntercept;
     // Estimated distance of the ball from the own goal
-    double distanceBall2Goal;
+    float distanceBall2Goal;
 
     // Computes parameters using the ball estimated position and velocity
     void estimateDiveTimes();
     void estimateBallProjection();
 
     // Compute the overall time the goalie needs to dive and then recover its position
-    inline double computeDiveAndRecoverTime(double alpha1, double alpha2);
+    inline float computeDiveAndRecoverTime(float alpha1, float alpha2);
 	
 public:
 
@@ -238,7 +250,7 @@ public:
     ~DiveHandler();
 
     // Setter for the reward list
-    inline const std::list<double>& getRewardList() const
+    inline const std::list<float>& getRewardList() const
     {
         return rewardHistory;
     }
