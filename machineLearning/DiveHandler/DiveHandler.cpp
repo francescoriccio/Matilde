@@ -23,8 +23,8 @@
 
 // Uncomment to have debug information
 //#define DIVEHANDLER_DEBUG
-//#define DIVEHANDLER_TRAINING_DEBUG
-//#define DIVEHANDLER_TRAINING
+#define DIVEHANDLER_TRAINING_DEBUG
+#define DIVEHANDLER_TRAINING
 //#define RAND_PERMUTATIONS
 
 #define NEGATIVE_REWARD -1.0
@@ -253,8 +253,7 @@ float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
     new_coeffs.at(0) = coeffs.at(0) + R.at(0);
     new_coeffs.at(1) = coeffs.at(1) + R.at(1);
 
-	return (diveHandler_ptr->estimatedInterval - ( R.at(0)*diveHandler_ptr->tBall2Goal))*
-			(diveHandler_ptr->estimatedInterval - ( R.at(0)*diveHandler_ptr->tBall2Goal)) ;
+	return ( std::abs(diveHandler_ptr->estimatedInterval - ( R.at(0)*diveHandler_ptr->tBall2Goal)) ) ;
 //    return (1.0-LAMBDA1)*fabs(diveHandler_ptr->tBall2Goal - tDiveAndRecover) +
 //            LAMBDA1*fabs(magnitude(coeffs) - magnitude(coeffsBest));
 
@@ -616,12 +615,15 @@ void DiveHandler::update(DiveHandle& diveHandle)
 		if( ((int) (clock() - timer.fallen)/(CLOCKS_PER_SEC/1000)) > 10001 &&
 				((int) (clock() - timer.fallen)/(CLOCKS_PER_SEC/1000)) < 10050 &&
 				(int) timer.fallen != 0)
-//			SPQR_SUCCESS("TooEarly time window START...");
+#ifdef DIVEHANDLER_TRAINING
+			SPQR_SUCCESS("TooEarly time window START...");
+#endif
 		if( ((int) (clock() - timer.fallen)/(CLOCKS_PER_SEC/1000)) > 14971 &&
 				((int) (clock() - timer.fallen)/(CLOCKS_PER_SEC/1000)) < 14999 &&
 				(int) timer.fallen != 0)
-//			SPQR_SUCCESS("TooEarly time window END.");
-
+#ifdef DIVEHANDLER_TRAINING
+			SPQR_SUCCESS("TooEarly time window END.");
+#endif
 		if( ((int) (clock() - timer.fallen)/(CLOCKS_PER_SEC/1000)) > 10000 &&
 				((int) (clock() - timer.fallen)/(CLOCKS_PER_SEC/1000)) < 15000 &&
 				(int) timer.fallen != 0)
@@ -663,7 +665,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
 						if( tooEarly )
 						{
 							SPQR_FAILURE("too FAST dude!");
-							estimatedInterval += 2000;
+							estimatedInterval = timer.fallen + 3000;
 							tooEarly=false;
 						}
 						else
@@ -678,7 +680,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
 					else if(ownScore != (int)theOwnTeamInfo.score && !estimatedTime)
 					{
 						SPQR_SUCCESS("SUPER!");
-						estimatedInterval -= 100;
+						estimatedInterval -= 200;
 						estimatedTime=true;
 					}
 
@@ -774,7 +776,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
 			{
 				SPQR_INFO("diveTime: " << diveTime );
 				SPQR_INFO("estimated time interval: " << estimatedInterval );
-				SPQR_ERR("TimeError: "<< (estimatedInterval - diveTime)*(estimatedInterval - diveTime));
+				SPQR_ERR("TimeError: "<< std::abs(estimatedInterval - diveTime) );
 				SPQR_INFO("/-----------------------------------------/\n");
 				stamp = false;
 			}
@@ -791,15 +793,6 @@ void DiveHandler::update(DiveHandle& diveHandle)
 				diveHandle.diveTime = diveTime -tDive;
             else
                 diveHandle.diveTime = -1.0;
-
-#ifdef DIVEHANDLER_TRAINING
-//            if (diveTime > 0.0)
-//            {
-//                if(diveHandle.diveTime < SPQR::GOALIE_DIVE_TIME_TOLERANCE)
-//                    SPQR_INFO("Dive now! ");
-//            }
-#endif
-
         }
         // If the ball is far away or completely off target, no dive has to performed
         else

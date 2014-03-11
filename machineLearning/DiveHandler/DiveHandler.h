@@ -61,7 +61,7 @@ END_MODULE
 #define BUFFER_DIM 10
 #define REWARDS_HISTORY_SIZE 10
 #define EPSILON 0.05
-#define T 15
+#define T 5
 // Evaluation weight
 #define LAMBDA1 0.9
 //#define LAMBDA2 0.3
@@ -214,7 +214,7 @@ private:
 			{
 				start = startTime;
 				setTimer = true;
-//				std::cerr << "\033[33;1m" <<"[DiveHandler] " << "set Timer!" << "\033[0m" << std::endl;
+				std::cerr << "\033[33;1m" <<"[DiveHandler] " << "set Timer!" << "\033[0m" << std::endl;
 			}
 		}
 		inline void reset()
@@ -222,7 +222,7 @@ private:
 			if(setTimer)
 			{
 				setTimer = false;
-//				std::cerr << "\033[33;1m" <<"[DiveHandler] " << "reset Timer!" << "\033[0m" << std::endl;
+				std::cerr << "\033[33;1m" <<"[DiveHandler] " << "reset Timer!" << "\033[0m" << std::endl;
 			}
 		}
 	};
