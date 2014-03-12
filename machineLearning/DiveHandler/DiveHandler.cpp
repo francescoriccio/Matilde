@@ -44,6 +44,7 @@
 bool stamp =false;
 bool tooEarly=false;
 bool estimatedTime=false;
+bool goalDetected=false;
 
 MAKE_MODULE(DiveHandler, SPQR-Modules)
 
@@ -612,25 +613,42 @@ void DiveHandler::update(DiveHandle& diveHandle)
         // Update the DiveHandle
         diveHandle.ballProjectionEstimate = ballProjectionIntercept;
 
-		if( ((int) (clock() - timer.fallen)/(CLOCKS_PER_SEC/1000)) > 10001 &&
-				((int) (clock() - timer.fallen)/(CLOCKS_PER_SEC/1000)) < 10050 &&
-				(int) timer.fallen != 0)
 #ifdef DIVEHANDLER_TRAINING
+		if( timer.getTimeSince(timer.fallen) > 10000 && timer.getTimeSince(timer.fallen) < 10050 && timer.fallen != 0)
 			SPQR_SUCCESS("TooEarly time window START...");
 #endif
-		if( ((int) (clock() - timer.fallen)/(CLOCKS_PER_SEC/1000)) > 14971 &&
-				((int) (clock() - timer.fallen)/(CLOCKS_PER_SEC/1000)) < 14999 &&
-				(int) timer.fallen != 0)
 #ifdef DIVEHANDLER_TRAINING
+		if( timer.getTimeSince(timer.fallen) > 14971 && timer.getTimeSince(timer.fallen) < 14999 && timer.fallen != 0)
 			SPQR_SUCCESS("TooEarly time window END.");
 #endif
-		if( ((int) (clock() - timer.fallen)/(CLOCKS_PER_SEC/1000)) > 10000 &&
-				((int) (clock() - timer.fallen)/(CLOCKS_PER_SEC/1000)) < 15000 &&
-				(int) timer.fallen != 0)
+
+		if(opponentScore != (int)theOpponentTeamInfo.score && !goalDetected)
 		{
-			if(opponentScore != (int)theOpponentTeamInfo.score)
-				tooEarly=true;
+			if( timer.getTimeSince(timer.fallen) > 10000 && timer.getTimeSince(timer.fallen) < 15000 &&
+					(unsigned int) timer.fallen != 0)
+			{
+#ifdef DIVEHANDLER_TRAINING
+				SPQR_FAILURE("too FAST dude!");
+#endif
+				estimatedInterval += 3000;
+			}
+			else
+			{
+//				if(goalTimer.setTimer)
+				{
+#ifdef DIVEHANDLER_TRAINING
+					SPQR_FAILURE("too SLOW dude!");
+#endif
+					estimatedInterval = goalTimer.getTimeSince(goalTimer.start) -500;
+				}
+			}
+			estimatedTime=true;
+			goalDetected=true;
 		}
+
+		if(theGameInfo.state == STATE_SET)
+			goalTimer.reset();
+
 		// Check whether the ball is close enough
 		if( (distanceBall2Goal < SPQR::FIELD_DIMENSION_X) && (fabs(ballProjectionIntercept) < SPQR::FIELD_DIMENSION_Y) )
         {
@@ -640,48 +658,65 @@ void DiveHandler::update(DiveHandle& diveHandle)
 			if(state != notLearning)
 			{
 				// if not in playing state
+
 				if(theGameInfo.state != STATE_PLAYING)
 					timer.reset();
 				else
 				{
+//					if(goalTimer.setTimer)
+//						SPQR_INFO("time: "<< goalTimer.getTimeSince(goalTimer.start));
+
 					// if the ball is moving enough fast then set the timer
-					if( !timer.setTimer && (theBallModel.estimate.velocity.abs() > SPQR::MOVING_BALL_MIN_VELOCITY &&
+					if( (theBallModel.estimate.velocity.abs() > SPQR::MOVING_BALL_MIN_VELOCITY &&
 										  theFrameInfo.getTimeSince(theBallModel.timeWhenLastSeen) < 1000) )
-						timer.set(clock());
+					{
+						if(!timer.setTimer)
+						{
+							timer.set(clock());
+#ifdef DIVEHANDLER_TRAINING
+							std::cerr << "\033[33;1m" <<"[DiveHandler] " << "set Timer!" << "\033[0m" << std::endl;
+#endif
+							goalTimer.set(clock());
+#ifdef DIVEHANDLER_TRAINING
+							std::cerr << "\033[33;1m" <<"[DiveHandler] " << "set goal Timer!" << "\033[0m" << std::endl;
+#endif
+						}
+					}
 					// else reset it...
-					if( timer.setTimer && (theBallModel.estimate.velocity.abs() < SPQR::MOVING_BALL_MIN_VELOCITY ||
-										 theFrameInfo.getTimeSince(theBallModel.timeWhenLastSeen) > 1000) )
-						timer.reset();
+					if( (theBallModel.estimate.velocity.abs() < SPQR::MOVING_BALL_MIN_VELOCITY ||
+										   theFrameInfo.getTimeSince(theBallModel.timeWhenLastSeen) > 4000) )
+					{
+						if(timer.setTimer)
+						{
+							timer.reset();
+#ifdef DIVEHANDLER_TRAINING
+							std::cerr << "\033[33;1m" <<"[DiveHandler] " << "reset Timer!" << "\033[0m" << std::endl;
+#endif
+						}
+						if(goalTimer.setTimer)
+						{
+							goalTimer.reset();
+#ifdef DIVEHANDLER_TRAINING
+							std::cerr << "\033[33;1m" <<"[DiveHandler] " << "reset goal Timer!" << "\033[0m" << std::endl;
+#endif
+						}
+					}
+
+					// if the goalie succeeded
+					if(ownScore != (int)theOwnTeamInfo.score && !estimatedTime)
+					{
+#ifdef DIVEHANDLER_TRAINING
+						SPQR_SUCCESS("SUPER!");
+#endif
+						estimatedInterval -= 200;
+						estimatedTime=true;
+					}
 
 					// if the goalie dives
 					if( (int)theFallDownState.state == (int)FallDownState::fallen )
 					{
 						timer.fallen=clock();
-						estimatedInterval = (int) (clock() - timer.start)/(CLOCKS_PER_SEC/1000);
-					}
-
-					if(opponentScore != (int)theOpponentTeamInfo.score && !estimatedTime)
-					{
-						if( tooEarly )
-						{
-							SPQR_FAILURE("too FAST dude!");
-							estimatedInterval = timer.fallen + 3000;
-							tooEarly=false;
-						}
-						else
-						{
-							SPQR_FAILURE("too SLOW dude!");
-							estimatedInterval += (int)(clock() - timer.fallen)/(CLOCKS_PER_SEC/1000) - 500;
-						}
-						estimatedTime=true;
-
-					}
-					// if the goalie succeeded
-					else if(ownScore != (int)theOwnTeamInfo.score && !estimatedTime)
-					{
-						SPQR_SUCCESS("SUPER!");
-						estimatedInterval -= 200;
-						estimatedTime=true;
+						estimatedInterval = timer.getTimeSince(timer.start);
 					}
 
 				}
@@ -715,7 +750,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
             else if( state == waitReward )
             {
                 // The opponent team scores: the goalie failed and gets a negative reward
-				if(opponentScore != (int)theOpponentTeamInfo.score && estimatedTime)
+				if(goalDetected && estimatedTime)
                 {
                     // The learner obtains a negative reward
                     rewardHistory.push_front(NEGATIVE_REWARD);
@@ -731,10 +766,11 @@ void DiveHandler::update(DiveHandle& diveHandle)
 #endif
                     // A reward has been received: re-enable learning
                     state = learning;
-					// Clear the pending rewardelse
+					// Clear the pending reward
                     if(!diveHandle.rewardAck)
                         diveHandle.rewardAck = true;
 
+					goalDetected=false;
 					estimatedTime=false;
 					stamp =true;
                 }

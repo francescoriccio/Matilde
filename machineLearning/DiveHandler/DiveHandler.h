@@ -61,7 +61,7 @@ END_MODULE
 #define BUFFER_DIM 10
 #define REWARDS_HISTORY_SIZE 10
 #define EPSILON 0.05
-#define T 5
+#define T 15
 // Evaluation weight
 #define LAMBDA1 0.9
 //#define LAMBDA2 0.3
@@ -208,26 +208,28 @@ private:
 		bool setTimer;
 
 		Timer():start(0), fallen(0), setTimer(false){}
+
+		inline unsigned int getTimeSince(clock_t startTime)
+		{
+			return (unsigned int) ((clock() - startTime)/(CLOCKS_PER_SEC/1000));
+		}
 		inline void set(clock_t startTime)
 		{
-			if(!setTimer)
+//			if(!setTimer)
 			{
 				start = startTime;
 				setTimer = true;
-				std::cerr << "\033[33;1m" <<"[DiveHandler] " << "set Timer!" << "\033[0m" << std::endl;
 			}
 		}
 		inline void reset()
 		{
-			if(setTimer)
-			{
+//			if(setTimer)
 				setTimer = false;
-				std::cerr << "\033[33;1m" <<"[DiveHandler] " << "reset Timer!" << "\033[0m" << std::endl;
-			}
 		}
 	};
 
 	Timer timer;
+	Timer goalTimer;
 	unsigned int estimatedInterval;
 
     // Estimated intersection between the ball projection and the goal line
