@@ -254,7 +254,7 @@ float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
     new_coeffs.at(0) = coeffs.at(0) + R.at(0);
     new_coeffs.at(1) = coeffs.at(1) + R.at(1);
 
-	return ( std::abs(diveHandler_ptr->estimatedInterval - ( R.at(0)*diveHandler_ptr->tBall2Goal)) ) ;
+	return ( std::abs(diveHandler_ptr->tBAGO - ( R.at(0)*diveHandler_ptr->tBAGOestimate)) ) ;
 //    return (1.0-LAMBDA1)*fabs(diveHandler_ptr->tBall2Goal - tDiveAndRecover) +
 //            LAMBDA1*fabs(magnitude(coeffs) - magnitude(coeffsBest));
 
@@ -315,7 +315,7 @@ bool DiveHandler::PGLearner::updateCoeffs()
 {
 
 #ifdef DIVEHANDLER_TRAINING
-    SPQR_INFO( "PG algorithm, iteration " << iter_count << "... " );
+	SPQR_INFO( "\nPG algorithm, iteration " << iter_count << "... " );
 #endif
 
     if( iter_count == MAX_ITER || converged() )
@@ -455,8 +455,8 @@ bool DiveHandler::PGLearner::updateCoeffs()
  */
 DiveHandler::DiveHandler():
     diveType(DiveHandle::none), state(static_cast<DiveHandler::LearningState>(SPQR::GOALIE_LEARNING_STATE)),
-    learner(new PGLearner(this, 2, EPSILON, T, 1.0, false)), opponentScore(0), tBall2Goal(SPQR::FIELD_DIMENSION_Y),
-	tDive(0.0), tBackInPose(0.0), estimatedInterval(0),
+	learner(new PGLearner(this, 2, EPSILON, T, 1.0, false)), opponentScore(0), tBall2Goal(-1),
+	tDive(0.0), tBackInPose(0.0), tBAGO(0),
 	ballProjectionIntercept(SPQR::FIELD_DIMENSION_Y), distanceBall2Goal(SPQR::FIELD_DIMENSION_X)
 {
 #ifdef DIVEHANDLER_TRAINING
@@ -538,12 +538,8 @@ void DiveHandler::estimateBallProjection()
     // Updating the class parameters with the obtained value
     ballProjectionIntercept = yIntercept;
 
-    // Computing the distance vector from the ball to the goal
-//    float delta_x = -SPQR::FIELD_DIMENSION_X - theGlobalBallEstimation.singleRobotX;
-//    float delta_y = ballProjectionIntercept - theGlobalBallEstimation.singleRobotY;
     // Estimated distance from the ball
-//    distanceBall2Goal = sqrt( delta_x*delta_x + delta_y*delta_y);
-	distanceBall2Goal = theBallModel.estimate.position.x;
+	distanceBall2Goal = theBallModel.estimate.position.abs();
 }
 
 /*
@@ -554,13 +550,13 @@ void DiveHandler::estimateBallProjection()
 void DiveHandler::estimateDiveTimes()
 {
     // Check whether the ball is actually moving toward the goal
-    if ( (theBallModel.estimate.velocity.abs() != 0.0)
-         && (theBallModel.estimate.velocity.x < 0.0) )
+	if ( (theBallModel.estimate.velocity.abs() != 0.0) &&
+		 (theBallModel.estimate.velocity.x < 0.0) )
         // Use a constant velocity approximation to the estimate the time interval
-        tBall2Goal = 1000.0 * ( distanceBall2Goal / theBallModel.estimate.velocity.abs() );
+		tBall2Goal = 1000.0 * ( distanceBall2Goal / theBallModel.estimate.velocity.abs() );
     else
         // Otherwise, set the parameter to a meaningless value
-        tBall2Goal = -1.0;
+		tBall2Goal = -1.0;
 
     // Using the appropriate estimates for recover and reposition times
     float tRecover = 0.0;
@@ -614,23 +610,22 @@ void DiveHandler::update(DiveHandle& diveHandle)
         diveHandle.ballProjectionEstimate = ballProjectionIntercept;
 
 #ifdef DIVEHANDLER_TRAINING
-		if( timer.getTimeSince(timer.fallen) > 10000 && timer.getTimeSince(timer.fallen) < 10050 && timer.fallen != 0)
+		if( timer.getTimeSince(timer.fallen) > 5000 && timer.getTimeSince(timer.fallen) < 5040 && timer.fallen != 0)
 			SPQR_SUCCESS("TooEarly time window START...");
-#endif
-#ifdef DIVEHANDLER_TRAINING
-		if( timer.getTimeSince(timer.fallen) > 14971 && timer.getTimeSince(timer.fallen) < 14999 && timer.fallen != 0)
+
+		if( timer.getTimeSince(timer.fallen) > 9961 && timer.getTimeSince(timer.fallen) < 9999 && timer.fallen != 0)
 			SPQR_SUCCESS("TooEarly time window END.");
 #endif
 
 		if(opponentScore != (int)theOpponentTeamInfo.score && !goalDetected)
 		{
-			if( timer.getTimeSince(timer.fallen) > 10000 && timer.getTimeSince(timer.fallen) < 15000 &&
+			if( timer.getTimeSince(timer.fallen) > 5000 && timer.getTimeSince(timer.fallen) < 10000 &&
 					(unsigned int) timer.fallen != 0)
 			{
 #ifdef DIVEHANDLER_TRAINING
 				SPQR_FAILURE("too FAST dude!");
 #endif
-				estimatedInterval += 3000;
+				tBAGO += 3000;
 			}
 			else
 			{
@@ -639,7 +634,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
 #ifdef DIVEHANDLER_TRAINING
 					SPQR_FAILURE("too SLOW dude!");
 #endif
-					estimatedInterval = goalTimer.getTimeSince(goalTimer.start) -500;
+					tBAGO = goalTimer.getTimeSince(goalTimer.start) -1500;
 				}
 			}
 			estimatedTime=true;
@@ -647,7 +642,10 @@ void DiveHandler::update(DiveHandle& diveHandle)
 		}
 
 		if(theGameInfo.state == STATE_SET)
+		{
+			tBAGOestimate=0;
 			goalTimer.reset();
+		}
 
 		// Check whether the ball is close enough
 		if( (distanceBall2Goal < SPQR::FIELD_DIMENSION_X) && (fabs(ballProjectionIntercept) < SPQR::FIELD_DIMENSION_Y) )
@@ -673,11 +671,10 @@ void DiveHandler::update(DiveHandle& diveHandle)
 						if(!timer.setTimer)
 						{
 							timer.set(clock());
+							goalTimer.set(clock());
+							tBAGOestimate=tBall2Goal;
 #ifdef DIVEHANDLER_TRAINING
 							std::cerr << "\033[33;1m" <<"[DiveHandler] " << "set Timer!" << "\033[0m" << std::endl;
-#endif
-							goalTimer.set(clock());
-#ifdef DIVEHANDLER_TRAINING
 							std::cerr << "\033[33;1m" <<"[DiveHandler] " << "set goal Timer!" << "\033[0m" << std::endl;
 #endif
 						}
@@ -699,6 +696,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
 #ifdef DIVEHANDLER_TRAINING
 							std::cerr << "\033[33;1m" <<"[DiveHandler] " << "reset goal Timer!" << "\033[0m" << std::endl;
 #endif
+							tBAGOestimate=0;
 						}
 					}
 
@@ -708,7 +706,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
 #ifdef DIVEHANDLER_TRAINING
 						SPQR_SUCCESS("SUPER!");
 #endif
-						estimatedInterval -= 200;
+						tBAGO -= 200;
 						estimatedTime=true;
 					}
 
@@ -716,7 +714,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
 					if( (int)theFallDownState.state == (int)FallDownState::fallen )
 					{
 						timer.fallen=clock();
-						estimatedInterval = timer.getTimeSince(timer.start);
+						tBAGO = timer.getTimeSince(timer.start);
 					}
 
 				}
@@ -810,10 +808,9 @@ void DiveHandler::update(DiveHandle& diveHandle)
 #ifdef DIVEHANDLER_TRAINING
 			if(stamp)
 			{
-				SPQR_INFO("diveTime: " << diveTime );
-				SPQR_INFO("estimated time interval: " << estimatedInterval );
-				SPQR_ERR("TimeError: "<< std::abs(estimatedInterval - diveTime) );
-				SPQR_INFO("/-----------------------------------------/\n");
+				SPQR_INFO("BAGO: " << tBAGO );
+				SPQR_INFO("BAGO estimate: " << tBAGOestimate );
+				SPQR_ERR("BAGO error: "<< std::abs(tBAGO - tBAGOestimate) );
 				stamp = false;
 			}
 #endif

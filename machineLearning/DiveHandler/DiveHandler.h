@@ -230,7 +230,8 @@ private:
 
 	Timer timer;
 	Timer goalTimer;
-	unsigned int estimatedInterval;
+	unsigned int tBAGO;
+	float tBAGOestimate;
 
     // Estimated intersection between the ball projection and the goal line
     float ballProjectionIntercept;
