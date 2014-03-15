@@ -644,6 +644,8 @@ void DiveHandler::update(DiveHandle& diveHandle)
 		if(theGameInfo.state == STATE_SET)
 		{
 			tBAGOestimate=0;
+			dBAGOestimate=0;
+			sampledVelocities.clear();
 			goalTimer.reset();
 		}
 
@@ -668,11 +670,13 @@ void DiveHandler::update(DiveHandle& diveHandle)
 					if( (theBallModel.estimate.velocity.abs() > SPQR::MOVING_BALL_MIN_VELOCITY &&
 										  theFrameInfo.getTimeSince(theBallModel.timeWhenLastSeen) < 1000) )
 					{
+						sampledVelocities.push_back( theBallModel.estimate.velocity.abs() );
 						if(!timer.setTimer)
 						{
 							timer.set(clock());
 							goalTimer.set(clock());
-							tBAGOestimate=tBall2Goal;
+							dBAGOestimate=distanceBall2Goal;
+//							tBAGOestimate=tBall2Goal;
 #ifdef DIVEHANDLER_TRAINING
 							std::cerr << "\033[33;1m" <<"[DiveHandler] " << "set Timer!" << "\033[0m" << std::endl;
 							std::cerr << "\033[33;1m" <<"[DiveHandler] " << "set goal Timer!" << "\033[0m" << std::endl;
@@ -697,6 +701,8 @@ void DiveHandler::update(DiveHandle& diveHandle)
 							std::cerr << "\033[33;1m" <<"[DiveHandler] " << "reset goal Timer!" << "\033[0m" << std::endl;
 #endif
 							tBAGOestimate=0;
+							dBAGOestimate=0;
+							sampledVelocities.clear();
 						}
 					}
 
@@ -716,9 +722,26 @@ void DiveHandler::update(DiveHandle& diveHandle)
 						timer.fallen=clock();
 						tBAGO = timer.getTimeSince(timer.start);
 					}
-
 				}
 			}
+
+			if(estimatedTime)
+			{
+				float velocityMean=0;
+				float velocityMax=0;
+				std::list<float>::const_iterator it=sampledVelocities.begin();
+				for(; it != sampledVelocities.end(); ++it)
+				{
+					if((*it) > velocityMax) velocityMax=(*it);
+					velocityMean += (*it) /sampledVelocities.size();
+				}
+
+				tBAGOestimate = 1000*(dBAGOestimate / velocityMax);
+				SPQR_INFO("distance: " << dBAGOestimate);
+				SPQR_INFO("velocity: " << (.75f*velocityMax)/1000);
+				SPQR_INFO("tBAGO: " << tBAGOestimate);
+			}
+
 
 #ifdef DIVEHANDLER_DEBUG
             SPQR_INFO("Ball projection: " << ballProjectionIntercept);

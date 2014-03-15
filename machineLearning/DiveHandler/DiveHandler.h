@@ -232,11 +232,13 @@ private:
 	Timer goalTimer;
 	unsigned int tBAGO;
 	float tBAGOestimate;
+	float dBAGOestimate;
 
     // Estimated intersection between the ball projection and the goal line
     float ballProjectionIntercept;
     // Estimated distance of the ball from the own goal
     float distanceBall2Goal;
+	std::list<float> sampledVelocities;
 
     // Computes parameters using the ball estimated position and velocity
     void estimateDiveTimes();
