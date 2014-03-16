@@ -245,23 +245,9 @@ void DiveHandler::PGLearner::generatePerturbations(std::vector<float>* partial_p
 float DiveHandler::PGLearner::evaluatePerturbation( std::vector<float> R )
 {
     // Dimensions check
-    assert(R.size() == coeffs.size());
-    // Generate perturbated policy and call the DiveHandler object for evaluation
-//    float tDiveAndRecover = diveHandler_ptr->computeDiveAndRecoverTime(coeffs.at(0) + R.at(0), coeffs.at(1) + R.at(1));
-
-    // Perturbated coefficients
-    std::vector<float> new_coeffs(2);
-    new_coeffs.at(0) = coeffs.at(0) + R.at(0);
-    new_coeffs.at(1) = coeffs.at(1) + R.at(1);
+	assert(R.size() == coeffs.size());
 
 	return ( std::abs(diveHandler_ptr->tBAGO - ( R.at(0)*diveHandler_ptr->tBAGOestimate)) ) ;
-//    return (1.0-LAMBDA1)*fabs(diveHandler_ptr->tBall2Goal - tDiveAndRecover) +
-//            LAMBDA1*fabs(magnitude(coeffs) - magnitude(coeffsBest));
-
-//    return (1.0-LAMBDA1-LAMBDA2)*fabs(tDiveAndRecover) +
-//           LAMBDA1*fabs(diveHandler_ptr->tBall2Goal - tDiveAndRecover) +
-//           LAMBDA2*fabs(1.0 - ((coeffs.at(0) + R.at(0))+(coeffs.at(1) + R.at(1))));
-
 }
 
 
@@ -447,6 +433,221 @@ bool DiveHandler::PGLearner::updateCoeffs()
 }
 
 
+/** --------------------- CoeffsLearner: Genetic Algorithm --------------------- */
+DiveHandler::GALearner::GALearner( DiveHandler* _dhPtr, int _nCoeffs, float _initValue ):
+	CoeffsLearner(_nCoeffs, _initValue, _dhPtr),
+	reward_score(.0f), reward_norm(.0f)
+{
+	setParam("selection", SELECTION);
+	setParam("crossover", CROSSOVER);
+	setParam("mutation", MUTATION);
+
+	setParam("elite", ELITE_SIZE);
+
+	srand(time(NULL));
+	for(unsigned int i=0; i< POPULATION_SIZE; ++i)
+		population.insert( Individual( (rand()%600) + 500) );
+
+}
+
+float DiveHandler::GALearner::evaluate(Individual i)
+{
+	return ( std::abs(diveHandler_ptr->tBAGO - ( i.hypothesis.to_ulong()*diveHandler_ptr->tBAGOestimate)) );
+}
+
+DiveHandler::GALearner::Individual DiveHandler::GALearner::rnd_mutate(Individual i)
+{
+	srand(time(NULL));
+	unsigned int n_flips = rand()%3+1;
+	for(unsigned int j=0; j< n_flips; ++j )
+		(i.hypothesis).flip(rand()%(INDIVIDUAL_SIZE-1));
+
+	return i;
+}
+
+DiveHandler::GALearner::Individual DiveHandler::GALearner::crossover(Individual mommy, const Individual& daddy)
+{
+	srand(time(NULL));
+	int crossover_point = rand()%INDIVIDUAL_SIZE;
+	for(unsigned int i = crossover_point+1; i<INDIVIDUAL_SIZE; ++i)
+		mommy.hypothesis[i] = daddy.hypothesis[i];
+
+	return mommy;
+}
+
+bool DiveHandler::GALearner::converged()
+{
+	// Skip convergence check if the buffer is not full
+	if (fitnessBuffer.size() < BUFFER_DIM)
+		return false;
+	// Average every coefficients variation across the buffer
+	else
+	{
+		// Compute variations mean
+		float avg_variation = .0f;
+		// Iterate over the whole buffer and compute deltas from step i-1 to i
+		std::list<float>::const_iterator i = fitnessBuffer.begin();
+		std::list<float>::const_iterator j = fitnessBuffer.begin(); ++j;
+		while (j != fitnessBuffer.end())
+		{
+			avg_variation += ( (*i) - (*j) )/fitnessBuffer.size();
+			++i; ++j;
+		}
+
+		// Compute variations standard deviation
+		float std_variation = .0f;
+		// Iterate over the whole buffer and compute deltas from step i-1 to i
+		std::list<float>::const_iterator k = fitnessBuffer.begin();
+		std::list<float>::const_iterator t = fitnessBuffer.begin(); ++t;
+		while (t != fitnessBuffer.end())
+		{
+			std_variation += ( pow((*k)-(*t) - avg_variation, 2) ) / fitnessBuffer.size();
+			++k; ++t;
+		}
+		std_variation = sqrt(std_variation);
+
+		// Check result against variation threshold
+		if ((avg_variation < CONVERGENCE_THRESHOLD) && (std_variation < CONVERGENCE_THRESHOLD))
+		{
+	#ifdef DIVEHANDLER_TRAINING
+			SPQR_SUCCESS("GALearner converged!");
+			SPQR_SUCCESS("Coefficients values:");
+			for (unsigned int i = 0; i < coeffs.size(); ++i)
+				SPQR_SUCCESS("\t" << coeffs.at(i));
+	#endif
+			return true;
+		}
+		else
+			return false;
+	}
+}
+
+void DiveHandler::GALearner::evolutionStep()
+{
+	std::set<Individual, cmp> previousPopulation(population);
+	population.clear();
+
+	int sel = 0;
+	std::set<Individual, cmp>::iterator selector = previousPopulation.begin();
+	std::set<Individual, cmp>::iterator partner = previousPopulation.end();
+	for(; selector != previousPopulation.end(); ++selector, ++sel)
+	{
+		if(sel < round(getParam("selection")*POPULATION_SIZE))
+			population.insert(Individual(evaluate(*selector), (*selector).hypothesis.to_string()));
+		else
+		{
+			srand(time(NULL));
+
+			if( rand()/RAND_MAX < getParam("mutation") )
+				population.insert( Individual(evaluate(rnd_mutate( *selector )), (rnd_mutate( *selector )).hypothesis.to_string()) );
+			else if( rand()/RAND_MAX < sqrt(getParam("crossover")) )
+			{
+				if(partner == previousPopulation.end())
+					partner = selector;
+				else
+				{
+					population.insert(Individual(evaluate(crossover( *selector, *partner )), (crossover( *selector, *partner )).hypothesis.to_string()));
+					population.insert(Individual(evaluate(crossover( *partner, *selector )), (crossover( *partner, *selector )).hypothesis.to_string()));
+					partner = previousPopulation.end();
+				}
+			}
+			else
+				population.insert(Individual(evaluate( *selector ), ( *selector ).hypothesis.to_string()));
+		}
+	}
+
+}
+
+void DiveHandler::GALearner::updateParams(const std::list<float>& rewards)
+{
+	// Re-initialize reward scores
+	reward_score = 0.0;
+	if (!rewards.empty()) reward_norm = 0.0;
+	int discount_exp = 0;
+	int positives = 0;
+
+	std::list<float>::const_iterator i = rewards.begin();
+	while (i != rewards.end())
+	{
+		// Counting positives
+		if (*i == POSITIVE_REWARD)
+			++positives;
+
+		// Computing discounted rewards
+		reward_score += (*i) * pow(GAMMA, discount_exp);
+		reward_norm += fabs((*i) * pow(GAMMA, discount_exp));
+		++i; ++discount_exp;
+	}
+
+#ifdef DIVEHANDLER_TRAINING_DEBUG
+	SPQR_INFO("Positive rewards: " << positives << " out of " << rewards.size());
+	SPQR_INFO("Negative rewards: " << (rewards.size() - positives) << " out of " << rewards.size());
+	SPQR_INFO("Reward total score: " << reward_score);
+#endif
+
+	//Adjusting GA parameters according to the obtained score
+	if(exp( -reward_score / (2*REWARDS_HISTORY_SIZE) ) * getParam("mutation") >= 1.0)
+		setParam("mutation", 1.0);
+	else
+		setParam("mutation", exp( -reward_score / REWARDS_HISTORY_SIZE ) * getParam("mutation"));
+
+	if(exp( -reward_score / (2*REWARDS_HISTORY_SIZE) ) * getParam("crossover") >= 1.0)
+		setParam("crossover", 1.0);
+	else
+		setParam("crossover", exp( -reward_score / (2*REWARDS_HISTORY_SIZE) ) * getParam("crossover"));
+
+	if(exp( -reward_score / (2*REWARDS_HISTORY_SIZE) ) * getParam("elite") >= 1.0)
+		setParam("elite", 1.0);
+	else
+		setParam("elite", exp( -reward_score / (2*REWARDS_HISTORY_SIZE) ) * getParam("elite"));
+
+#ifdef DIVEHANDLER_TRAINING
+	SPQR_INFO( "Mutation rate value changed to: " << getParam("mutation") << " according to the obtained rewards. ");
+	SPQR_INFO( "Crossover rate value changed to: " << getParam("crossover") << " according to the obtained rewards. ");
+	SPQR_INFO( "Elite percentage changed to: " << getParam("elite") << " according to the obtained rewards. ");
+#endif
+
+}
+
+bool DiveHandler::GALearner::updateCoeffs()
+{
+#ifdef DIVEHANDLER_TRAINING
+	SPQR_INFO( "\nGA algorithm, iteration " << iter_count << "... " );
+#endif
+
+	if( iter_count == MAX_ITER || converged() )
+		return false;
+	else
+	{
+		evolutionStep();
+
+		float avg_fitness=.0f;
+		float avg_coeff=.0f;
+		std::set<Individual, cmp>::iterator evaluator = population.begin();
+		for( unsigned int sel=0; sel<round(getParam("elite")*POPULATION_SIZE); ++evaluator, ++sel)
+		{
+			avg_fitness += evaluator->fitness / round(getParam("elite")*POPULATION_SIZE);
+			avg_coeff += (evaluator->hypothesis.to_ulong()) / (1000*round(getParam("elite")*POPULATION_SIZE));
+		}
+
+		fitnessBuffer.push_front(avg_fitness);
+
+		// Crop buffer
+		if (fitnessBuffer.size() > BUFFER_DIM)
+			fitnessBuffer.resize(BUFFER_DIM);
+
+		coeffs.at(0) = avg_coeff;
+
+#ifdef DIVEHANDLER_TRAINING
+		SPQR_INFO("New coefficients: [ " << coeffs.at(0) << " ]");
+#endif
+			++iter_count;
+
+		return true;
+	}
+}
+
+
 /** --------------------------- Dive Handler ---------------------------- */
 
 
@@ -455,8 +656,8 @@ bool DiveHandler::PGLearner::updateCoeffs()
  */
 DiveHandler::DiveHandler():
     diveType(DiveHandle::none), state(static_cast<DiveHandler::LearningState>(SPQR::GOALIE_LEARNING_STATE)),
-	learner(new PGLearner(this, 2, EPSILON, T, 1.0, false)), opponentScore(0), tBall2Goal(-1),
-	tDive(0.0), tBackInPose(0.0), tBAGO(0),
+	learner(new PGLearner(this, 2, EPSILON, T, 1.0, false)),
+	opponentScore(0), tBall2Goal(-1), tDive(0.0), tBackInPose(0.0), tBAGO(0), tBAGOestimate(0),
 	ballProjectionIntercept(SPQR::FIELD_DIMENSION_Y), distanceBall2Goal(SPQR::FIELD_DIMENSION_X)
 {
 #ifdef DIVEHANDLER_TRAINING
@@ -481,6 +682,7 @@ DiveHandler::~DiveHandler()
  * at which the ball is expected to reach the goal.
  * Then, the diveTime and the diveType parameters are defined accordingly.
  */
+
 void DiveHandler::estimateBallProjection()
 {
     // Ball path line
@@ -658,7 +860,6 @@ void DiveHandler::update(DiveHandle& diveHandle)
 			if(state != notLearning)
 			{
 				// if not in playing state
-
 				if(theGameInfo.state != STATE_PLAYING)
 					timer.reset();
 				else
@@ -667,7 +868,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
 //						SPQR_INFO("time: "<< goalTimer.getTimeSince(goalTimer.start));
 
 					// if the ball is moving enough fast then set the timer
-					if( (theBallModel.estimate.velocity.abs() > SPQR::MOVING_BALL_MIN_VELOCITY &&
+					if( (theBallModel.estimate.velocity.abs() > SPQR::GOALIE_MOVING_BALL_MIN_VELOCITY &&
 										  theFrameInfo.getTimeSince(theBallModel.timeWhenLastSeen) < 1000) )
 					{
 						sampledVelocities.push_back( theBallModel.estimate.velocity.abs() );
@@ -684,7 +885,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
 						}
 					}
 					// else reset it...
-					if( (theBallModel.estimate.velocity.abs() < SPQR::MOVING_BALL_MIN_VELOCITY ||
+					if( (theBallModel.estimate.velocity.abs() < SPQR::GOALIE_MOVING_BALL_MIN_VELOCITY ||
 										   theFrameInfo.getTimeSince(theBallModel.timeWhenLastSeen) > 4000) )
 					{
 						if(timer.setTimer)
@@ -736,10 +937,9 @@ void DiveHandler::update(DiveHandle& diveHandle)
 					velocityMean += (*it) /sampledVelocities.size();
 				}
 
-				tBAGOestimate = 1000*(dBAGOestimate / velocityMax);
+				tBAGOestimate = 1000*(dBAGOestimate / (.75f*velocityMax));
 				SPQR_INFO("distance: " << dBAGOestimate);
 				SPQR_INFO("velocity: " << (.75f*velocityMax)/1000);
-				SPQR_INFO("tBAGO: " << tBAGOestimate);
 			}
 
 

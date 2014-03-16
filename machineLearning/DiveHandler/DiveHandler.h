@@ -22,6 +22,8 @@
 #include <vector>
 #include <list>
 #include <map>
+#include <set>
+#include <bitset>
 #include <time.h>
 
 #include "Tools/Module/Module.h"
@@ -52,7 +54,6 @@ MODULE(DiveHandler)
     PROVIDES(DiveHandle)
 END_MODULE
 
-
 // Termination conditions
 #define MAX_ITER 15
 #define CONVERGENCE_THRESHOLD 0.01
@@ -62,10 +63,14 @@ END_MODULE
 #define REWARDS_HISTORY_SIZE 10
 #define EPSILON 0.05
 #define T 15
-// Evaluation weight
-#define LAMBDA1 0.9
-//#define LAMBDA2 0.3
+// GA parameters
+#define POPULATION_SIZE 100
+#define INDIVIDUAL_SIZE 11
 
+#define SELECTION  0.1
+#define CROSSOVER 0.5
+#define MUTATION 0.3
+#define ELITE_SIZE 0.2
 
 // Module class declaration
 class DiveHandler : public DiveHandlerBase
@@ -171,9 +176,57 @@ class DiveHandler : public DiveHandlerBase
         }
 
     };
+
 	
-// 	class GALearner : public CoeffsLearner
-// 	{};
+	class GALearner : public CoeffsLearner
+	{
+	private:
+		// Current reward score
+		float reward_score;
+		// Current reward normalization factor
+		float reward_norm;
+
+		std::list<float> fitnessBuffer;
+
+		class Individual
+		{
+		public:
+			float fitness;
+			std::bitset<INDIVIDUAL_SIZE> hypothesis;
+			Individual( std::string id): fitness(.0f), hypothesis(id){}
+			Individual( float f, std::string id): fitness(f), hypothesis(id){}
+			Individual( unsigned int id): fitness(.0f), hypothesis(id){}
+			inline bool operator<(const Individual& right) const { return (this->fitness) <= right.fitness; }
+		};
+
+		struct cmp
+		{
+			bool operator()(const Individual& left, const Individual& right) const
+			{
+				return left < right;
+			}
+		};
+		std::set<Individual, GALearner::cmp> population;
+
+		float evaluate(Individual i);
+		Individual rnd_mutate(Individual i);
+		Individual crossover(Individual mommy, const Individual& daddy);
+
+		// Check for convergence of the algorithm
+		bool converged();
+
+	public:
+		GALearner( DiveHandler* _dhPtr, int _nCoeffs, float _initValue );
+
+		void evolutionStep();
+
+		// Update the GA parameters according to the obtained rewards
+		void updateParams(const std::list<float>& rewards);
+
+		// Update coefficients performing a step of the learning algorithm
+		virtual bool updateCoeffs();
+	};
+
 	
 private:
 
