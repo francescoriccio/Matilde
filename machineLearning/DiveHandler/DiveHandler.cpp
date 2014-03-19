@@ -23,8 +23,8 @@
 
 // Uncomment to have debug information
 //#define DIVEHANDLER_DEBUG
-#define DIVEHANDLER_TRAINING_DEBUG
-#define DIVEHANDLER_TRAINING
+//#define DIVEHANDLER_TRAINING_DEBUG
+//#define DIVEHANDLER_TRAINING
 //#define RAND_PERMUTATIONS
 
 #define NEGATIVE_REWARD -1.0
@@ -46,7 +46,7 @@ bool tooEarly=false;
 bool estimatedTime=false;
 bool goalDetected=false;
 
-#ifdef DIVEHANDLER_TRAINING_DEBUG
+#ifdef DIVEHANDLER_TRAINING
 int n_mutation = 0;
 int n_crossover = 0;
 #endif
@@ -451,7 +451,7 @@ DiveHandler::GALearner::GALearner( DiveHandler* _dhPtr, int _nCoeffs, float _ini
 
     srand(time(NULL));
     for(unsigned int i=0; i< POPULATION_SIZE; ++i)
-        population.insert( Individual( (rand()%600) + 500) );
+		population.insert( Individual( (rand()%600) + 600) );
 
 #ifdef DIVEHANDLER_DEBUG
     std::set<Individual, cmp>::iterator i = population.begin();
@@ -471,13 +471,16 @@ DiveHandler::GALearner::Individual DiveHandler::GALearner::rnd_mutate(Individual
 {
 #ifdef DIVEHANDLER_TRAINING_DEBUG
     SPQR_INFO("Individual " << (((float)i.hypothesis.to_ulong())/1000) << " mutates into: ");
-    ++n_mutation;
 #endif
 
-    srand(time(NULL));
+#ifdef DIVEHANDLER_TRAINING
+	++n_mutation;
+#endif
+
+//    srand(time(NULL));
     unsigned int n_flips = rand()%3+1;
     for(unsigned int j=0; j< n_flips; ++j )
-        (i.hypothesis).flip(rand()%(INDIVIDUAL_SIZE-1));
+		(i.hypothesis).flip(rand()%(INDIVIDUAL_SIZE-7) + 2);
 
 #ifdef DIVEHANDLER_TRAINING_DEBUG
     SPQR_INFO(((float)i.hypothesis.to_ulong())/1000);
@@ -489,12 +492,15 @@ DiveHandler::GALearner::Individual DiveHandler::GALearner::rnd_mutate(Individual
 DiveHandler::GALearner::Individual DiveHandler::GALearner::crossover(Individual mommy, const Individual& daddy)
 {
 #ifdef DIVEHANDLER_TRAINING_DEBUG
-    ++n_crossover;
     SPQR_INFO("Couple " << ((float)mommy.hypothesis.to_ulong())/1000 << " and " << ((float)daddy.hypothesis.to_ulong())/1000);
 #endif
 
+#ifdef DIVEHANDLER_TRAINING
+	++n_crossover;
+#endif
+
 //    srand(time(NULL));
-    int crossover_point = rand() % (INDIVIDUAL_SIZE-5) +2;
+	int crossover_point = rand() % (INDIVIDUAL_SIZE-7) +2;
 
 #ifdef DIVEHANDLER_TRAINING_DEBUG
     SPQR_INFO("Crossover point: " << crossover_point);
@@ -600,10 +606,13 @@ void DiveHandler::GALearner::evolutionStep()
         }
     }
 
+#ifdef DIVEHANDLER_TRAINING
+	SPQR_INFO("Number of mutations: " << n_mutation);
+	SPQR_INFO("Number of crossover: " << n_crossover);
+	n_mutation = 0; n_crossover = 0;
+#endif
+
 #ifdef DIVEHANDLER_TRAINING_DEBUG
-    SPQR_INFO("Number of mutations: " << n_mutation);
-    SPQR_INFO("Number of crossover: " << n_crossover);
-    n_mutation = 0; n_crossover = 0;
 
     SPQR_INFO("New population:");
     std::set<Individual, cmp>::iterator i = population.begin();
@@ -635,7 +644,7 @@ void DiveHandler::GALearner::updateParams(const std::list<float>& rewards)
         ++i; ++discount_exp;
     }
 
-#ifdef DIVEHANDLER_TRAINING_DEBUG
+#ifdef DIVEHANDLER_TRAINING
     SPQR_INFO("Positive rewards: " << positives << " out of " << rewards.size());
     SPQR_INFO("Negative rewards: " << (rewards.size() - positives) << " out of " << rewards.size());
     SPQR_INFO("Reward total score: " << reward_score);
@@ -650,7 +659,7 @@ void DiveHandler::GALearner::updateParams(const std::list<float>& rewards)
     if(exp( -reward_score / (2*REWARDS_HISTORY_SIZE) ) * getParam("crossover") >= 1.0)
         setParam("crossover", 1.0);
     else
-        setParam("crossover", exp( -reward_score / (2*REWARDS_HISTORY_SIZE) ) * getParam("crossover"));
+		setParam("crossover", exp( -reward_score / (REWARDS_HISTORY_SIZE) ) * getParam("crossover"));
 
     if(exp( -reward_score / (2*REWARDS_HISTORY_SIZE) ) * getParam("elite") >= 1.0)
         setParam("elite", 1.0);
@@ -738,7 +747,6 @@ DiveHandler::~DiveHandler()
  * at which the ball is expected to reach the goal.
  * Then, the diveTime and the diveType parameters are defined accordingly.
  */
-
 void DiveHandler::estimateBallProjection()
 {
     // Ball path line
@@ -859,7 +867,7 @@ inline float DiveHandler::computeDiveAndRecoverTime(float alpha1, float alpha2)
  */
 void DiveHandler::update(DiveHandle& diveHandle)
 {
-    if ( time(NULL) % 6 == 0 )
+	if ( time(NULL) % 30 == 0 )
         srand(time(NULL));
 
     // Check you're actually the goalie...
@@ -896,6 +904,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
                     SPQR_FAILURE("too SLOW dude!");
 #endif
                     tBAGO = goalTimer.getTimeSince(goalTimer.start) -1500;
+					if(tBAGO > 4000000000) tBAGO=1000;
                 }
             }
             estimatedTime=true;
@@ -997,8 +1006,8 @@ void DiveHandler::update(DiveHandle& diveHandle)
                 }
 
                 tBAGOestimate = 1000*(dBAGOestimate / (.75f*velocityMax));
-                SPQR_INFO("distance: " << dBAGOestimate);
-                SPQR_INFO("velocity: " << (.75f*velocityMax)/1000);
+//                SPQR_INFO("distance: " << dBAGOestimate);
+//                SPQR_INFO("velocity: " << (.75f*velocityMax)/1000);
             }
 
 

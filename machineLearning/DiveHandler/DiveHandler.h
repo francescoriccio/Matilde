@@ -68,8 +68,8 @@ END_MODULE
 #define INDIVIDUAL_SIZE 11
 
 #define SELECTION  0.1
-#define CROSSOVER 0.5
-#define MUTATION 0.3
+#define CROSSOVER 0.3
+#define MUTATION 0.2
 #define ELITE_SIZE 0.2
 
 // Module class declaration
