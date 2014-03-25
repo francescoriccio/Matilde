@@ -57,12 +57,16 @@ END_MODULE
 // Termination conditions
 #define MAX_ITER 15
 #define CONVERGENCE_THRESHOLD 0.01
+// PG algorithm define, if commented the module performs a GA algorithm instead
+#define PG_LEARNER
+
 // PG parameters
 #define GAMMA 0.5
 #define BUFFER_DIM 10
 #define REWARDS_HISTORY_SIZE 10
 #define EPSILON 0.05
 #define T 15
+
 // GA parameters
 #define POPULATION_SIZE 100
 #define INDIVIDUAL_SIZE 11
