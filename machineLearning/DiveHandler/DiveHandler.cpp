@@ -24,7 +24,7 @@
 // Uncomment to have debug information
 //#define DIVEHANDLER_DEBUG
 //#define DIVEHANDLER_TRAINING_DEBUG
-//#define DIVEHANDLER_TRAINING
+#define DIVEHANDLER_TRAINING
 //#define RAND_PERMUTATIONS
 
 #define NEGATIVE_REWARD -1.0
@@ -48,6 +48,7 @@ bool tooEarly=false;
 bool fallen=false;
 bool estimatedTime=false;
 bool goalDetected=false;
+bool superCase=false;
 
 #ifdef DIVEHANDLER_TRAINING
 int n_mutation = 0;
@@ -993,10 +994,11 @@ void DiveHandler::update(DiveHandle& diveHandle)
                         tBAGO -= .0f;
                         fallen=false;
                         estimatedTime=true;
+                        superCase=true;
                     }
 
                     // if the goalie dives
-                    if( (int)theFallDownState.state == (int)FallDownState::onGround && !fallen)
+                    if( (int)theFallDownState.state == (int)FallDownState::onGround && !fallen && !superCase)
                     {
                         timer.fallenTime.setToNow();
                         tBAGO = (float)((Timestamp() - goalTimer.startTime).getMs());
@@ -1006,7 +1008,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
                 }
             }
 
-            if(estimatedTime)
+            if(estimatedTime && !superCase)
             {
                 float velocityMean=0;
                 float velocityMax=0;
@@ -1103,6 +1105,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
 
                     estimatedTime=false;
                     stamp=true;
+                    superCase=false;
                 }
             }
 
