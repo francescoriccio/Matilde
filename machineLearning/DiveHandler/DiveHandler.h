@@ -37,10 +37,7 @@
 #include "Representations/SPQR-Representations/RobotPoseSpqrFiltered.h"
 #include "Representations/SPQR-Representations/GlobalBallEstimation.h"
 #include "Representations/SPQR-Representations/DiveHandle.h"
-<<<<<<< HEAD
 #include "Core/Processors/Processor.h"
-=======
->>>>>>> f81a5fae72ac2340d70aac149a88c8063e9416f4
 #include "Utils/AgentPacket.h"
 
 
@@ -59,11 +56,7 @@ MODULE(DiveHandler)
 END_MODULE
 
 // Termination conditions
-<<<<<<< HEAD
 #define MAX_ITER 50
-=======
-#define MAX_ITER 15
->>>>>>> f81a5fae72ac2340d70aac149a88c8063e9416f4
 #define CONVERGENCE_THRESHOLD 0.01
 // PG algorithm define, if commented the module performs a GA algorithm instead
 #define PG_LEARNER
@@ -72,11 +65,7 @@ END_MODULE
 #define GAMMA 0.5
 #define BUFFER_DIM 10
 #define REWARDS_HISTORY_SIZE 10
-<<<<<<< HEAD
 #define EPSILON 0.1
-=======
-#define EPSILON 0.05
->>>>>>> f81a5fae72ac2340d70aac149a88c8063e9416f4
 #define T 15
 
 // GA parameters
@@ -193,11 +182,7 @@ class DiveHandler : public DiveHandlerBase
 
     };
 
-<<<<<<< HEAD
 
-=======
-	
->>>>>>> f81a5fae72ac2340d70aac149a88c8063e9416f4
 	class GALearner : public CoeffsLearner
 	{
 	private:
@@ -247,11 +232,7 @@ class DiveHandler : public DiveHandlerBase
 		virtual bool updateCoeffs();
 	};
 
-<<<<<<< HEAD
 
-=======
-	
->>>>>>> f81a5fae72ac2340d70aac149a88c8063e9416f4
 private:
 
     // Dive type currently selected
@@ -279,7 +260,6 @@ private:
 	// Timer
 	class Timer
 	{
-<<<<<<< HEAD
     public:
         PTracking::Timestamp startTime, fallenTime;
         bool setTimer;
@@ -299,27 +279,6 @@ private:
 			}
 		}
 
-=======
-	public:
-		clock_t start;
-		clock_t fallen;
-		bool setTimer;
-
-		Timer():start(0), fallen(0), setTimer(false){}
-
-		inline unsigned int getTimeSince(clock_t startTime)
-		{
-			return (unsigned int) ((clock() - startTime)/(CLOCKS_PER_SEC/1000));
-		}
-		inline void set(clock_t startTime)
-		{
-//			if(!setTimer)
-			{
-				start = startTime;
-				setTimer = true;
-			}
-		}
->>>>>>> f81a5fae72ac2340d70aac149a88c8063e9416f4
 		inline void reset()
 		{
 //			if(setTimer)
@@ -329,12 +288,8 @@ private:
 
 	Timer timer;
 	Timer goalTimer;
-<<<<<<< HEAD
 
     float tBAGO;
-=======
-	unsigned int tBAGO;
->>>>>>> f81a5fae72ac2340d70aac149a88c8063e9416f4
 	float tBAGOestimate;
 	float dBAGOestimate;
 
