@@ -104,7 +104,7 @@ class DiveHandler : public DiveHandlerBase
 
         // Pointer to the DiveHandler object whose coefficients are learned
         DiveHandler* diveHandler_ptr;
-
+		
         public:
         // Default constructor
         CoeffsLearner(int _nCoeffs, float _initValue, DiveHandler* _dhPtr):
@@ -182,7 +182,7 @@ class DiveHandler : public DiveHandlerBase
 
     };
 
-
+	
 	class GALearner : public CoeffsLearner
 	{
 	private:
@@ -232,7 +232,7 @@ class DiveHandler : public DiveHandlerBase
 		virtual bool updateCoeffs();
 	};
 
-
+	
 private:
 
     // Dive type currently selected
@@ -305,7 +305,7 @@ private:
 
     // Compute the overall time the goalie needs to dive and then recover its position
     inline float computeDiveAndRecoverTime(float alpha1, float alpha2);
-
+	
 public:
 
     // Default constructor
@@ -321,5 +321,5 @@ public:
 
     // Update the DiveHandle for the goalie behavior
     void update(DiveHandle& diveHandle);
-
+	
 };

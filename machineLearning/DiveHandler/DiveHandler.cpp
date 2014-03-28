@@ -401,7 +401,7 @@ bool DiveHandler::PGLearner::updateCoeffs()
 
 #ifdef DIVEHANDLER_TRAINING
         SPQR_INFO("Computed policy gradient: [ " << coeffs_avgGradient.at(0)/normalization
-                  /*<< ", " << coeffs_avgGradient.at(1)/normalization */<< " ]");
+				  /*<< ", " << coeffs_avgGradient.at(1)/normalization */<< " ]");
 #endif
         // Weight new gradient estimate and previous one according to the reward score
         std::vector<float> newGradient (coeffsGradient.size());
@@ -410,7 +410,7 @@ bool DiveHandler::PGLearner::updateCoeffs()
 
 #ifdef DIVEHANDLER_TRAINING
         SPQR_INFO("New policy gradient: [ " << newGradient.at(0)
-                  << /*", " << newGradient.at(1) << */" ]");
+				  << /*", " << newGradient.at(1) << */" ]");
 #endif
 
         // Update coefficients history
@@ -432,7 +432,7 @@ bool DiveHandler::PGLearner::updateCoeffs()
         }
 
 #ifdef DIVEHANDLER_TRAINING
-        SPQR_INFO("New coefficients: [ " << coeffs.at(0) << /*", " << coeffs.at(1) <<*/ " ]");
+		SPQR_INFO("New coefficients: [ " << coeffs.at(0) << /*", " << coeffs.at(1) <<*/ " ]");
 #endif
         ++iter_count;
 
@@ -454,7 +454,7 @@ DiveHandler::GALearner::GALearner( DiveHandler* _dhPtr, int _nCoeffs, float _ini
 
     srand(time(NULL));
     for(unsigned int i=0; i< POPULATION_SIZE; ++i)
-        population.insert( Individual( (rand()%600) + 600) );
+		population.insert( Individual( (rand()%600) + 600) );
 
 #ifdef DIVEHANDLER_DEBUG
     std::set<Individual, cmp>::iterator i = population.begin();
@@ -477,13 +477,13 @@ DiveHandler::GALearner::Individual DiveHandler::GALearner::rnd_mutate(Individual
 #endif
 
 #ifdef DIVEHANDLER_TRAINING
-    ++n_mutation;
+	++n_mutation;
 #endif
 
-    //    srand(time(NULL));
+//    srand(time(NULL));
     unsigned int n_flips = rand()%3+1;
     for(unsigned int j=0; j< n_flips; ++j )
-        (i.hypothesis).flip(rand()%(INDIVIDUAL_SIZE-7) + 2);
+		(i.hypothesis).flip(rand()%(INDIVIDUAL_SIZE-7) + 2);
 
 #ifdef DIVEHANDLER_TRAINING_DEBUG
     SPQR_INFO(((float)i.hypothesis.to_ulong())/1000);
@@ -499,11 +499,11 @@ DiveHandler::GALearner::Individual DiveHandler::GALearner::crossover(Individual 
 #endif
 
 #ifdef DIVEHANDLER_TRAINING
-    ++n_crossover;
+	++n_crossover;
 #endif
 
-    //    srand(time(NULL));
-    int crossover_point = rand() % (INDIVIDUAL_SIZE-7) +2;
+//    srand(time(NULL));
+	int crossover_point = rand() % (INDIVIDUAL_SIZE-7) +2;
 
 #ifdef DIVEHANDLER_TRAINING_DEBUG
     SPQR_INFO("Crossover point: " << crossover_point);
@@ -577,9 +577,9 @@ void DiveHandler::GALearner::evolutionStep()
     std::set<Individual, cmp> previousPopulation(population);
     population.clear();
 
-    int sel = 0;
+	int sel = 0;
     std::set<Individual, cmp>::iterator selector = previousPopulation.begin();
-    std::set<Individual, cmp>::iterator partner = previousPopulation.end();
+	std::set<Individual, cmp>::iterator partner = previousPopulation.end();
     for(; selector != previousPopulation.end(); ++selector, ++sel)
     {
         if(sel < round(getParam("selection")*POPULATION_SIZE))
@@ -591,35 +591,29 @@ void DiveHandler::GALearner::evolutionStep()
                 Individual mutated (rnd_mutate( *selector ));
                 population.insert( Individual(evaluate(mutated), (mutated).hypothesis.to_string()) );
             }
-            else if( ((float)rand())/RAND_MAX < sqrt(getParam("crossover")))
+			else if( ((float)rand())/RAND_MAX < sqrt(getParam("crossover")))
             {
-                if(partner == previousPopulation.end())
-                    partner = selector;
+				if(partner == previousPopulation.end())
+					partner = selector;
                 else
                 {
                     Individual first_child (crossover( *selector, *partner ));
                     Individual second_child (crossover( *partner, *selector ));
                     population.insert(Individual(evaluate(first_child), first_child.hypothesis.to_string()));
                     population.insert(Individual(evaluate(second_child), second_child.hypothesis.to_string()));
-                    partner = previousPopulation.end();
+					partner = previousPopulation.end();
                 }
             }
-
-            population.insert(Individual(evaluate( *selector ), ( *selector ).hypothesis.to_string()));
+            else
+                population.insert(Individual(evaluate( *selector ), ( *selector ).hypothesis.to_string()));
         }
     }
 
-    std::set<Individual, cmp>::iterator resizer = population.begin();
-    for(int resizer_count = 0; ((resizer_count != POPULATION_SIZE) && (resizer != population.end())); ++resizer, ++resizer_count)
-    {}
-    population.erase(resizer, population.end());
-
-
 #ifdef DIVEHANDLER_TRAINING
-    SPQR_INFO("Population size: " << population.size());
-    SPQR_INFO("Number of mutations: " << n_mutation);
-    SPQR_INFO("Number of crossover: " << n_crossover);
-    n_mutation = 0; n_crossover = 0;
+	SPQR_INFO("Population size: " << population.size());
+	SPQR_INFO("Number of mutations: " << n_mutation);
+	SPQR_INFO("Number of crossover: " << n_crossover);
+	n_mutation = 0; n_crossover = 0;
 #endif
 
 #ifdef DIVEHANDLER_TRAINING_DEBUG
@@ -669,7 +663,7 @@ void DiveHandler::GALearner::updateParams(const std::list<float>& rewards)
     if(exp( -reward_score / (2*REWARDS_HISTORY_SIZE) ) * getParam("crossover") >= 1.0)
         setParam("crossover", 1.0);
     else
-        setParam("crossover", exp( -reward_score / (REWARDS_HISTORY_SIZE) ) * getParam("crossover"));
+		setParam("crossover", exp( -reward_score / (REWARDS_HISTORY_SIZE) ) * getParam("crossover"));
 
     if(exp( -reward_score / (2*REWARDS_HISTORY_SIZE) ) * getParam("elite") >= 1.0)
         setParam("elite", 1.0);
@@ -680,7 +674,6 @@ void DiveHandler::GALearner::updateParams(const std::list<float>& rewards)
     SPQR_INFO( "Mutation rate value changed to: " << getParam("mutation") << " according to the obtained rewards. ");
     SPQR_INFO( "Crossover rate value changed to: " << getParam("crossover") << " according to the obtained rewards. ");
     SPQR_INFO( "Elite percentage changed to: " << getParam("elite") << " according to the obtained rewards. ");
-    SPQR_INFO("Population size: " << population.size());
 #endif
 
 }
@@ -692,12 +685,7 @@ bool DiveHandler::GALearner::updateCoeffs()
 #endif
 
     if( iter_count == MAX_ITER || converged() )
-    {
-        reward_score = 0.0;
-        fitnessBuffer.clear();
-        iter_count = 0;
         return false;
-    }
     else
     {
         evolutionStep();
@@ -737,11 +725,11 @@ bool DiveHandler::GALearner::updateCoeffs()
  */
 DiveHandler::DiveHandler():
     diveType(DiveHandle::none), state(static_cast<DiveHandler::LearningState>(SPQR::GOALIE_LEARNING_STATE)),
-    #ifdef PG_LEARNER
-    learner(new PGLearner(this, 1)),
-    #else
-    learner(new GALearner(this, 1, 1.0)),
-    #endif
+#ifdef PG_LEARNER
+	learner(new PGLearner(this, 1)),
+#else
+	learner(new GALearner(this, 1, 1.0)),
+#endif
     opponentScore(0), tBall2Goal(-1), tDive(0.0), tBackInPose(0.0), tBAGO(0), tBAGOestimate(0),
     ballProjectionIntercept(SPQR::FIELD_DIMENSION_Y), distanceBall2Goal(SPQR::FIELD_DIMENSION_X)
 {
@@ -887,7 +875,7 @@ inline float DiveHandler::computeDiveAndRecoverTime(float alpha1, float alpha2)
  */
 void DiveHandler::update(DiveHandle& diveHandle)
 {
-    if ( time(NULL) % 30 == 0 )
+	if ( time(NULL) % 30 == 0 )
         srand(time(NULL));
 
     // Check you're actually the goalie...
@@ -925,7 +913,7 @@ void DiveHandler::update(DiveHandle& diveHandle)
                     SPQR_FAILURE("too SLOW dude!");
 #endif
                     tBAGO = (float) (Timestamp() - goalTimer.startTime).getMs();
-                    if(tBAGO > 4000000000) tBAGO=1000;
+					if(tBAGO > 4000000000) tBAGO=1000;
                 }
             }
             estimatedTime=true;
@@ -1029,10 +1017,10 @@ void DiveHandler::update(DiveHandle& diveHandle)
                     velocityMean += (*it) /sampledVelocities.size();
                 }
 
-                if(velocityMax != .0f)
-                    tBAGOestimate = 1000*(dBAGOestimate / (.75f*velocityMax));
-                //                SPQR_INFO("distance: " << dBAGOestimate);
-                //                SPQR_INFO("velocity: " << (.75f*velocityMax)/1000);
+				if(velocityMax != .0f)
+					tBAGOestimate = 1000*(dBAGOestimate / (.75f*velocityMax));
+//                SPQR_INFO("distance: " << dBAGOestimate);
+//                SPQR_INFO("velocity: " << (.75f*velocityMax)/1000);
             }
 
 
@@ -1045,24 +1033,27 @@ void DiveHandler::update(DiveHandle& diveHandle)
 #endif
 
             // The module is in the learning state and a reward has been received
-            if( state == learning )
+			if( clock() % 240 && state == learning )
             {
                 // Perform a single iteration of the learning algorithm
-                if( !learner->updateCoeffs() )
+                if( learner->updateCoeffs() )
                 {
+#ifdef PG_LEARNER
                     // Change the state in 'waiting for reward'
                     state = waitReward;
+#endif
                     // Flag a pending reward to the goalie behavior
                     diveHandle.rewardAck = false;
                 }
-#ifdef PG_LEARNER
                 else
                     // The algorithm has converged: turning off learning
                     state = notLearning;
-#endif
+
             }
             // The module is in the learning state, waiting for the next reward
-            else if( state == waitReward )
+#ifdef PG_LEARNER
+			else if( state == waitReward )
+#endif
             {
                 // The opponent team scores: the goalie failed and gets a negative reward
                 if(goalDetected && estimatedTime)
@@ -1118,14 +1109,10 @@ void DiveHandler::update(DiveHandle& diveHandle)
             // Use the reward to adjust the algorithm parameters
 #ifdef PG_LEARNER
             if( state == learning )
-                learner->updateParams(rewardHistory);
 #else
-            if( state == waitReward && diveHandle.rewardAck)
-            {
-                learner->updateParams(rewardHistory);
-                state = learning;
-            }
+			if( state == learning && diveHandle.rewardAck )
 #endif
+                learner->updateParams(rewardHistory);
 
             // Compute the dive time using the current coefficients as T = alpha2 * (alpha1*T_PAPO - T_dive)
             float diveTime = ( (learner->getCoeffs()).at(0) * tBall2Goal );
