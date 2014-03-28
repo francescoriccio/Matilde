@@ -1,0 +1,44 @@
+motion_id = keeperJumpLeft
+
+label start  
+
+hardness 75 75 75 75 75 75 75 75 75 75 75 75 75 75 75 75 75 75 75 75 75 75 50
+
+"riseHand 
+47.6 15 75 0 0 0 -75 * * * * * * * * * * * * * * * 0 500    
+
+"turnLeftAnkle
+- - * - - - * - - - - 20 * * - -30 - - * * - 22 1 400   
+
+// try no to sit at the initial phase of the match
+//  (1)  HeadYaw       [-119/119]    (2)  HeadPitch     [29/-38]   (3) LShoulderPitch  [-119/119]       (4)  LShoulderRoll [-18/76]     
+//  (5)  LElbowYaw     [-119/119]    (6)  LElbowRoll    [-88/0]    (7) RShoulderPitch  [119/-119]       (8)  RShoulderRoll [-76/18]
+//  (9)  RElbowYaw     [119/-119]    (10)  RElbowRoll   [88/0]     (11) LHipYawPitch   [-65/42]         (12) LHipRoll      [-21/45]  
+//  (13) LHipPitch     [-88/27]      (14) LKneePitch    [-5/121]   (15) LAnklePitch    [52/-68]         (16) LAnkleRoll    [-22/44]  
+//  (17) RHipYawPitch  [-65/42]      (18) RHipRoll      [-45/21]   (19) RHipPitch      [27/-88]         (20) RKneePitch    [121/-5]  
+//  (21) RAnklePitch   [53/-67]      (22) RAnkleRoll [-44/22]
+//"HY HP LSP LSR LEY LER RSP RSR REY RER LHYP LHR LHP LKP LAP LAR RHYP RHR RHP RKP RAP RAR Int Dur
+//- - - - - - - - - - - - - - - - - - - - - - 0 100
+
+"deactivate joints
+- - - - - - - - - - - - - - - - - - - - - - 0 800 
+
+hardness 75 75 75 75 75 75 75 75 75 75 75 75 75 75 75 75 75 75 75 75 75 75 50
+
+//- - - - - - - 0 0 0 -12.3 20 -71.5 122.3 -67.2 -6.5 0 -20 -34.8 66.9 -33 4.6 1 100
+//- - - - - - - 0 0 0 - 45 - - - -21.5 - -45 - 30 - 22 1 200
+
+//- - 117.9 16.3 2.7 -9.8 -87.4 18.2 0.3 -22.6 11.4 6.5 -75.4 123.3 -69 1.7 11.4 8.2 11.5 -4.6 -32.4 2.8 1 500
+
+//- - -5.2 28.7 -6.5 -1.9 -111.4 12.2 11.4 -9 -21.4 8.8 -76 122.4 -69.7 -1.9 -21.4 2.5 28.7 -7.5 -27.7 -6 1 350
+//- - 37.6 61.4 -18.2 -1.4 -95.3 15 11.1 -9.7 -34 -9.3 -62.1 122.6 -69.8 -3.6 -34 6.3 29.5 18.5 -27.8 -5.4 1 200
+//- - -90.6 15.2 0.1 -18.2 -91.1 12.7 -0.3 -16.7 0 0.2 -7 28.6 -21.5 - 0 0.2 -7 28.5 -21.3 - 1 300
+
+label repeat
+- - - - - - - - - - - - - - - - - - - - - - 0 100 
+
+transition keeperJumpLeft keeperJumpLeft repeat
+transition standUpFrontNao standUpFrontNao start
+transition standUpBackNao standUpBackNao start
+
+transition allMotions extern start

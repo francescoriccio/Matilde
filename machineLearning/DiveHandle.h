@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Tools/Math/Vector2.h"
+#include "Tools/Enum.h"
 
 class DiveHandle : public Streamable
 {
@@ -20,18 +21,14 @@ private:
     }
 
 public:
-	enum Dive
-	{ 
-		none = 1, 
-		lDive, 
-		rDive, 
-		lcloseDive, 
-        rcloseDive,
-        stopBall
-	};
-	
-	typedef int Dive;
-	
+    ENUM(Dive,
+         none = 1,
+         lDive,
+         rDive,
+         lcloseDive,
+         rcloseDive,
+         stopBall);
+
     float diveTime;
     float ballProjectionEstimate;
     Dive diveType;
